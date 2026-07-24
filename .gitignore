@@ -1,0 +1,12 @@
+﻿vendor/
+node_modules/
+*.zip
+*.tar.gz
+*.rar
+*.log
+*.tmp
+.env
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

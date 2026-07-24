@@ -1,0 +1,13 @@
+# Pretty error pages off; protect sensitive files
+<FilesMatch "\.(sql|md)$">
+  Require all denied
+</FilesMatch>
+Options -Indexes
+
+# Ensure proper MIME types for images
+<IfModule mod_mime.c>
+  AddType image/jpeg .jpg .jpeg
+  AddType image/png .png
+  AddType image/gif .gif
+  AddType image/webp .webp
+</IfModule>
