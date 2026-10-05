@@ -52,7 +52,7 @@
 
 | የፈተና ፋይል | የተፈተነው ተግባር | የፈተና ብዛት |
 | :--- | :--- | :--- |
-| `tests/Unit/EthiopianCalendarTest.php` | የኢትዮጵያ ዘመን አቆጣጠር ስሌቶች፣ ጳጉሜ 6 (ሊፕ ዓመት)፣ የመስከረም መጀመሪያ እና የክፍያ ወር ስሌቶች | 11 ፈተናዎች |
+| `tests/Unit/EthiopianCalendarTest.php` | የኢትዮጵያ ዘመን አቆጣጠር ስሌቶች፣ ጳጉሜ 6 (ሊፕ ዓመት)፣ ባለብዙ ክፍለ-ዘመን የስነ-ፈለክ ቀመር፣ የሁለትዮሽ ለውጥ (bidirectional) እና የክፍያ ወር ስሌቶች | 5 ፈተናዎች (172 assertions) |
 | `tests/Feature/LibraryServiceTest.php` | መጽሐፍ ማዋስ፣ መመለስ፣ ማደስ፣ የጠፉ/የተጎዱ ቅጂዎች ጥበቃ፣ ያልተከፈለ ቅጣት ገደብ፣ የቅጣት አከፋፈል እና ይቅርታ | 9 ፈተናዎች |
 | `tests/Feature/NotificationDeliveryTest.php` | ባለብዙ ቻናል ማሳወቂያዎች፣ የመላኪያ ኦዲት፣ የክሮን ማሳሰቢያ ድግግሞሽ መከላከያ (deduplication)፣ እና የተነበቡ ማሳወቂያዎች መከታተያ | 5 ፈተናዎች |
 | `tests/Security/LoginThrottleTest.php` | በ 10 የተሳሳቱ የይለፍ ቃል ሙከራዎች ለ 20 ደቂቃ የሚደረግ እገዳ፣ ትክክለኛ መግቢያ ሲደረግ የቆጣሪ መጽዳት | 4 ፈተናዎች |
@@ -71,13 +71,13 @@ PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
 Runtime:       PHP 8.2.12
 Configuration: C:\xampp\htdocs\atsede_library\phpunit.xml
 
-................................................                  48 / 48 (100%)
+..................................................                50 / 50 (100%)
 
-Time: 00:11.278, Memory: 12.00 MB
+Time: 00:18.528, Memory: 12.00 MB
 
-OK (48 tests, 228 assertions)
+OK (50 tests, 368 assertions)
 ```
 
-- **ጠቅላላ የፈተናዎች ብዛት**: 48
-- **ጠቅላላ የተረጋገጡ ነጥቦች (Assertions)**: 228
+- **ጠቅላላ የፈተናዎች ብዛት**: 50
+- **ጠቅላላ የተረጋገጡ ነጥቦች (Assertions)**: 368
 - **የማለፍ ምጣኔ**: 100% (ምንም አይነት ውድቀት ወይም ስህተት የለም)

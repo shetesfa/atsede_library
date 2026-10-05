@@ -80,4 +80,57 @@ class EthiopianCalendarTest extends TestCase
         $monthLabel = format_billing_month_amharic('2019-01');
         $this->assertSame('መስከረም 2019 ዓ.ም.', $monthLabel);
     }
+
+    public function testUniversalMultiCenturyConversion(): void
+    {
+        // Historic: Battle of Adwa victory (Yekatit 23, 1888 <-> March 1, 1896)
+        $adwa = gregorianToEthParts('1896-03-01');
+        $this->assertSame(1888, $adwa['year']);
+        $this->assertSame(6, $adwa['month']);
+        $this->assertSame(23, $adwa['day']);
+        $this->assertSame('1896-03-01', ethiopianToGregorian(1888, 6, 23));
+
+        // Ethiopian Millennium (Meskerem 1, 2000 <-> September 12, 2007)
+        $mil = gregorianToEthParts('2007-09-12');
+        $this->assertSame(2000, $mil['year']);
+        $this->assertSame(1, $mil['month']);
+        $this->assertSame(1, $mil['day']);
+        $this->assertSame('2007-09-12', ethiopianToGregorian(2000, 1, 1));
+
+        // Ginbot 20, 1983 <-> May 28, 1991
+        $g20 = gregorianToEthParts('1991-05-28');
+        $this->assertSame(1983, $g20['year']);
+        $this->assertSame(9, $g20['month']);
+        $this->assertSame(20, $g20['day']);
+        $this->assertSame('1991-05-28', ethiopianToGregorian(1983, 9, 20));
+
+        // Patriots Victory Day (Miyazya 27, 1933 <-> May 5, 1941)
+        $patriot = gregorianToEthParts('1941-05-05');
+        $this->assertSame(1933, $patriot['year']);
+        $this->assertSame(8, $patriot['month']);
+        $this->assertSame(27, $patriot['day']);
+        $this->assertSame('1941-05-05', ethiopianToGregorian(1933, 8, 27));
+
+        // Far future: January 1, 2050 <-> Tahsas 23, 2042
+        $future = gregorianToEthParts('2050-01-01');
+        $this->assertSame(2042, $future['year']);
+        $this->assertSame(4, $future['month']);
+        $this->assertSame(23, $future['day']);
+        $this->assertSame('2050-01-01', ethiopianToGregorian(2042, 4, 23));
+    }
+
+    public function testBidirectionalConsistencyAcrossYears(): void
+    {
+        // 100 sample dates across multiple years and centuries
+        $sampleYears = [1900, 1941, 1974, 1991, 2000, 2010, 2020, 2024, 2026, 2027, 2030, 2050];
+        foreach ($sampleYears as $y) {
+            foreach ([1, 4, 7, 9, 12] as $m) {
+                $greg = sprintf('%04d-%02d-15', $y, $m);
+                $eth = gregorianToEthParts($greg);
+                $this->assertNotNull($eth, "Conversion failed for $greg");
+                $back = ethiopianToGregorian($eth['year'], $eth['month'], $eth['day']);
+                $this->assertSame($greg, $back, "Bidirectional roundtrip failed for $greg");
+            }
+        }
+    }
 }

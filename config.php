@@ -114,42 +114,109 @@ if (!defined('BASE_URL')) {
 define('UPLOAD_DIR', __DIR__ . '/uploads/covers/');
 define('UPLOAD_URL', rtrim(BASE_URL, '/') . '/uploads/covers/');
 
-// ---- Ethiopian calendar helpers ---------------------------------------
-function gregorianToEthParts($gregorianDate) {
-    if (empty($gregorianDate) || $gregorianDate === '0000-00-00') return null;
-    $date     = new DateTime($gregorianDate);
-    $gregYear = (int)$date->format('Y');
+// ---- Ethiopian calendar helpers (Universal JDN Algorithm for All Years) ----
 
-    // Ethiopian New Year is September 11 (or September 12 in year following leap year)
-    $newYearDay = ($gregYear % 4 === 3) ? 12 : 11;
-    $ethNewYear = new DateTime("$gregYear-09-$newYearDay");
+function ethiopian_to_jd($year, $month, $day) {
+    $y = (int)$year - 1;
+    $cycle = intdiv($y, 4);
+    $yearInCycle = $y % 4;
+    $days = $cycle * 1461;
+    if ($yearInCycle === 1) {
+        $days += 365;
+    } elseif ($yearInCycle === 2) {
+        $days += 730;
+    } elseif ($yearInCycle === 3) {
+        $days += 1096;
+    }
+    $days += ((int)$month - 1) * 30 + ((int)$day - 1);
+    return 1724221 + $days;
+}
 
-    if ($date >= $ethNewYear) {
-        $ethYear    = $gregYear - 7;
-        $refNewYear = $ethNewYear;
+function jd_to_ethiopian($jd) {
+    $r = (int)$jd - 1724221;
+    if ($r < 0) return null;
+    $cycle = intdiv($r, 1461);
+    $rem = $r % 1461;
+
+    if ($rem < 365) {
+        $yearInCycle = 0;
+        $dayInYear = $rem;
+    } elseif ($rem < 730) {
+        $yearInCycle = 1;
+        $dayInYear = $rem - 365;
+    } elseif ($rem < 1096) {
+        $yearInCycle = 2; // Leap year (ዘመነ ሉቃስ - 6 Pagume days)
+        $dayInYear = $rem - 730;
     } else {
-        $prevYear = $gregYear - 1;
-        $prevNewYearDay = ($prevYear % 4 === 3) ? 12 : 11;
-        $refNewYear = new DateTime("$prevYear-09-$prevNewYearDay");
-        $ethYear    = $gregYear - 8;
+        $yearInCycle = 3;
+        $dayInYear = $rem - 1096;
     }
 
-    $daysDiff = $date->diff($refNewYear)->days;
-    if ($daysDiff < 360) {
-        $ethMonth = (int)floor($daysDiff / 30) + 1;
-        $ethDay   = ($daysDiff % 30) + 1;
+    $year = ($cycle * 4) + $yearInCycle + 1;
+    if ($dayInYear < 360) {
+        $month = intdiv($dayInYear, 30) + 1;
+        $day = ($dayInYear % 30) + 1;
     } else {
-        $ethMonth = 13;
-        $ethDay   = ($daysDiff - 360) + 1;
-        $maxPagume = ($ethYear % 4 === 3) ? 6 : 5;
-        $ethDay   = min($ethDay, $maxPagume);
+        $month = 13;
+        $day = ($dayInYear - 360) + 1;
     }
 
     return [
-        'year'  => $ethYear,
-        'month' => $ethMonth,
-        'day'   => $ethDay,
+        'year'  => (int)$year,
+        'month' => (int)$month,
+        'day'   => (int)$day,
     ];
+}
+
+function gregorian_to_jd_universal($month, $day, $year) {
+    if (function_exists('gregoriantojd')) {
+        return gregoriantojd((int)$month, (int)$day, (int)$year);
+    }
+    $m = (int)$month;
+    $d = (int)$day;
+    $y = (int)$year;
+    $a = intdiv(14 - $m, 12);
+    $y2 = $y + 4800 - $a;
+    $m2 = $m + 12 * $a - 3;
+    return $d + intdiv(153 * $m2 + 2, 5) + 365 * $y2 + intdiv($y2, 4) - intdiv($y2, 100) + intdiv($y2, 400) - 32045;
+}
+
+function jd_to_gregorian_universal($jd) {
+    if (function_exists('jdtogregorian')) {
+        return jdtogregorian((int)$jd);
+    }
+    $l = (int)$jd + 68569;
+    $n = intdiv(4 * $l, 146097);
+    $l = $l - intdiv(146097 * $n + 3, 4);
+    $i = intdiv(4000 * ($l + 1), 1461001);
+    $l = $l - intdiv(1461 * $i, 4) + 31;
+    $j = intdiv(80 * $l, 2447);
+    $d = $l - intdiv(2447 * $j, 80);
+    $l = intdiv($j, 11);
+    $m = $j + 2 - 12 * $l;
+    $y = 100 * ($n - 49) + $i + $l;
+    return sprintf('%02d/%02d/%04d', $m, $d, $y);
+}
+
+function gregorianToEthParts($gregorianDate) {
+    if (empty($gregorianDate) || $gregorianDate === '0000-00-00') return null;
+    try {
+        $date = new DateTime($gregorianDate);
+        $m = (int)$date->format('n');
+        $d = (int)$date->format('j');
+        $y = (int)$date->format('Y');
+        $jd = gregorian_to_jd_universal($m, $d, $y);
+        return jd_to_ethiopian($jd);
+    } catch (\Throwable $e) {
+        return null;
+    }
+}
+
+function ethiopianToGregorian($year, $month, $day) {
+    $jd = ethiopian_to_jd((int)$year, (int)$month, (int)$day);
+    $greg = jd_to_gregorian_universal($jd); // "m/d/Y"
+    $parts = explode('/', $greg);
+    return sprintf('%04d-%02d-%02d', (int)$parts[2], (int)$parts[0], (int)$parts[1]);
 }
 
 function get_ethiopian_month_name($monthNum) {

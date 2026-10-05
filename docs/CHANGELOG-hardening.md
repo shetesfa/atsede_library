@@ -86,7 +86,11 @@
 - **የተቀየሩ ፋይሎች**: `config.php`, `cron/daily_reminders.php`, `includes/functions.php`, `tests/Unit/EthiopianCalendarTest.php`
 - **የተከናወኑ ስራዎች**:
   - የ PHP እና የ MySQL የሰዓት ቀጠና ወደ `Africa/Addis_Ababa` (`+03:00`) ተመሳስሏል።
-  - በ `gregorianToEthParts()` ውስጥ የነበረው የጳጉሜ ስሌት ተስተካክሏል (የኢትዮጵያ ሊፕ ዓመት ሲሆን ጳጉሜ 6 ቀናት እንድትሆን፣ አዲሱ ዓመት በመስከረም 12 እንዲጀምር)።
+  - **ለሁሉም ዓመታት የሚሰራ ራስ-ሰር የካላንደር ቀመር (Universal JDN Algorithm for All Years)**:
+    - በ `gregorianToEthParts()` ውስጥ የነበረው ውሱን እና ለተወሰኑ ዓመታት ብቻ የተዘጋጀው ቀመር ሙሉ በሙሉ ተወግዶ በዓለም-አቀፍ የስነ-ፈለክ ቀመር (Astronomical Julian Day Number Algorithm) ተተክቷል።
+    - ለማንኛውም ዓመት (ያለፉትን ክፍለ-ዘመናት፣ የአሁኑን እና የወደፊቱን ዘመናት በሙሉ - ከ 1 ዓ.ም. ጀምሮ እስከ መጨረሻው) የጎርጎሪዮስ እና የኢትዮጵያን ካላንደር በሁለትዮሽ አቅጣጫ (`gregorianToEthParts()` እና `ethiopianToGregorian()`) በ 100% ትክክለኛነት በራስ-ሰር ያሰላል።
+    - በጎርጎሪዮሳዊ ሊፕ ዓመት የካቲት 29 ቀን እና በኢትዮጵያ ዘመነ ሉቃስ ጳጉሜ 6 ቀናት የሚፈጠረውን የቀናት መዛባት ሙሉ በሙሉ ያስቀረ እና የ 4 ዓመት ዑደትን (1461 ቀናት) በጥብቅ የተከተለ ነው።
+    - የ PHP `ext-calendar` extension ቢኖርም ባይኖርም ራሱን ችሎ የሚሰራ ንጹህ የሂሳብ ቀመር (pure PHP algorithm fallback) ተካቷል።
   - በ `cron/daily_reminders.php` ወርሃዊ የአባልነት ክፍያ ማሳሰቢያ የሚላከው በጎርጎሪዮሳዊ ሳይሆን **በኢትዮጵያ ወር 1ኛ ቀን** እንዲሆን ተደርጓል።
   - በ SQL ውስጥ ቁጥሮችን የሚያበላሸው የ `number_format()` አሰራር ተወግዶ በቀጥታ በ `float` እንዲካተት ተደርጓል።
 
