@@ -689,17 +689,45 @@ function resolve_copy_by_qr($conn, $qrIdentifier) {
             }
         }
     }
-    $stmt = mysqli_prepare($conn, "SELECT bc.*, b.title, b.author, b.description, b.cover_image, b.cover_original, b.cover_optimized, b.borrow_status, b.is_borrowable, b.non_borrowable_reason, b.price, b.publication_year, b.publisher, b.position, c.name AS category_name, r.name AS room_name, s.name AS shelf_name
-        FROM book_copies bc
-        JOIN books b ON b.id = bc.book_id
-        LEFT JOIN categories c ON c.id = b.category_id
-        LEFT JOIN rooms r ON r.id = b.room_id
-        LEFT JOIN shelves s ON s.id = b.shelf_id
-        WHERE bc.qr_identifier = ? OR bc.copy_code = ? LIMIT 1");
-    mysqli_stmt_bind_param($stmt, 'ss', $qr, $qr);
-    mysqli_stmt_execute($stmt);
-    $res = mysqli_stmt_get_result($stmt);
-    return mysqli_fetch_assoc($res);
+
+    if (empty($qr)) {
+        return null;
+    }
+
+    $baseSelect = "SELECT bc.*, b.title, b.author, b.description, b.cover_image, b.cover_original, b.cover_optimized, 
+                          b.borrow_status, b.is_borrowable, b.non_borrowable_reason, b.price, b.publication_year, 
+                          b.publisher, b.position, c.name AS category_name, r.name AS room_name, s.name AS shelf_name
+                   FROM book_copies bc
+                   JOIN books b ON b.id = bc.book_id
+                   LEFT JOIN categories c ON c.id = b.category_id
+                   LEFT JOIN rooms r ON r.id = b.room_id
+                   LEFT JOIN shelves s ON s.id = b.shelf_id";
+
+    // 1. Prioritize strict qr_identifier resolution
+    $stmt1 = mysqli_prepare($conn, "$baseSelect WHERE bc.qr_identifier = ? LIMIT 1");
+    if ($stmt1) {
+        mysqli_stmt_bind_param($stmt1, 's', $qr);
+        mysqli_stmt_execute($stmt1);
+        $res1 = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt1));
+        mysqli_stmt_close($stmt1);
+        if ($res1) {
+            return $res1;
+        }
+    }
+
+    // 2. Fallback to copy_code resolution
+    $stmt2 = mysqli_prepare($conn, "$baseSelect WHERE bc.copy_code = ? LIMIT 1");
+    if ($stmt2) {
+        mysqli_stmt_bind_param($stmt2, 's', $qr);
+        mysqli_stmt_execute($stmt2);
+        $res2 = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt2));
+        mysqli_stmt_close($stmt2);
+        if ($res2) {
+            return $res2;
+        }
+    }
+
+    return null;
 }
 
 function get_qr_url($qrIdentifier) {
