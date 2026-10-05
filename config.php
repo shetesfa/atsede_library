@@ -5,6 +5,9 @@
  * config.local.php NEVER goes to Git or shared hosting public folders.
  */
 
+// Timezone configuration (Africa/Addis_Ababa, UTC+3)
+date_default_timezone_set('Africa/Addis_Ababa');
+
 // Project-specific session name and secure cookie parameters
 if (session_status() === PHP_SESSION_NONE) {
     ini_set('session.use_strict_mode', '1');
@@ -55,6 +58,7 @@ if (!$conn) {
     die("አገልግሎቱ ለጊዜው አይገኝም፤ እባክዎ ከጥቂት ደቂቃዎች በኋላ ይሞክሩ።");
 }
 mysqli_set_charset($conn, "utf8mb4");
+@mysqli_query($conn, "SET time_zone = '+03:00'");
 
 
 // Lightweight schema patch for existing installs
@@ -99,9 +103,15 @@ function gregorianToEthParts($gregorianDate) {
     }
 
     $daysDiff = $date->diff($refNewYear)->days;
-    $ethMonth = (int)floor($daysDiff / 30) + 1;
-    $ethDay   = ($daysDiff % 30) + 1;
-    if ($ethMonth > 13) { $ethMonth = 13; $ethDay = min($ethDay, 6); }
+    if ($daysDiff < 360) {
+        $ethMonth = (int)floor($daysDiff / 30) + 1;
+        $ethDay   = ($daysDiff % 30) + 1;
+    } else {
+        $ethMonth = 13;
+        $ethDay   = ($daysDiff - 360) + 1;
+        $maxPagume = ($ethYear % 4 === 3) ? 6 : 5;
+        $ethDay   = min($ethDay, $maxPagume);
+    }
 
     return [
         'year'  => $ethYear,

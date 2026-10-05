@@ -28,7 +28,7 @@ require_once __DIR__ . '/../includes/functions.php';
 
 $today     = date('Y-m-d');
 $tomorrow  = date('Y-m-d', strtotime('+1 day'));
-$thisMonth = date('Y-m');
+$thisMonth = current_billing_month();
 
 echo "[" . date('Y-m-d H:i:s') . "] Cron started.\n";
 
@@ -110,11 +110,16 @@ while ($row = mysqli_fetch_assoc($resOverdue)) {
 echo "[OK] Overdue alerts sent: $overdueSent\n";
 
 // =====================================================================
-// STEP 4: Monthly payment reminder (1st of each month)
+// STEP 4: Monthly payment reminder (1st of each Ethiopian month)
 // =====================================================================
-if (date('j') === '1') {
-    $monthLabel  = format_billing_month_amharic($thisMonth);
-    $minPayment  = number_format(get_minimum_monthly_payment($conn), 2);
+$ethToday = gregorianToEthParts($today);
+$isFirstEthDay = ($ethToday !== null && (int)$ethToday['day'] === 1);
+
+if ($isFirstEthDay) {
+    $monthLabel        = format_billing_month_amharic($thisMonth);
+    $minPaymentVal     = (float)get_minimum_monthly_payment($conn);
+    $minPaymentDisplay = number_format($minPaymentVal, 2);
+    $thisMonthSafe     = mysqli_real_escape_string($conn, $thisMonth);
 
     $resUnpaid = mysqli_query($conn,
         "SELECT u.id AS user_id, u.full_name, u.telegram_chat_id, u.telegram_joined,
@@ -126,15 +131,15 @@ if (date('j') === '1') {
            AND u.telegram_chat_id IS NOT NULL
            AND m.id NOT IN (
                SELECT member_id FROM membership_payments
-               WHERE payment_month = '$thisMonth'
-               AND amount >= $minPayment
+               WHERE payment_month = '$thisMonthSafe'
+               AND amount >= $minPaymentVal
            )");
 
     $payReminderSent = 0;
     while ($row = mysqli_fetch_assoc($resUnpaid)) {
         $msg = "💰 <b>ወርሃዊ ክፍያ ማስታወሻ</b>\n\n" .
                "📅 ወር: <b>$monthLabel</b>\n" .
-               "📋 ዝቅተኛ ክፍያ: <b>$minPayment ብር</b>\n\n" .
+               "📋 ዝቅተኛ ክፍያ: <b>$minPaymentDisplay ብር</b>\n\n" .
                "❗ ክፍያዎን ቤተ-መጻሕፍቱ ሄደው ያስፈጽሙ።\n" .
                "ካልተከፈለ ለዚህ ወር መጽሐፍ ማዋስ አይፈቀድም።";
         if (telegram_send($conn, $row['telegram_chat_id'], $msg)) {
