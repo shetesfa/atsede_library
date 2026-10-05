@@ -245,10 +245,16 @@ function notify_broadcast($conn, $title, $message, $type = 'general', $link = nu
 }
 
 function unread_count($conn, $userId) {
-    $stmt = mysqli_prepare($conn, "SELECT COUNT(*) c FROM notifications WHERE (user_id = ? OR user_id IS NULL) AND is_read = 0");
-    mysqli_stmt_bind_param($stmt, 'i', $userId);
-    mysqli_stmt_execute($stmt);
-    $row = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+    if (!$conn || !$userId) return 0;
+    $userId = (int)$userId;
+    $res = mysqli_query($conn, "
+        SELECT COUNT(*) AS c 
+        FROM notifications n
+        LEFT JOIN notification_reads nr ON nr.notification_id = n.id AND nr.user_id = $userId
+        WHERE (n.user_id = $userId AND n.is_read = 0)
+           OR (n.user_id IS NULL AND nr.id IS NULL)
+    ");
+    $row = mysqli_fetch_assoc($res);
     return (int)($row['c'] ?? 0);
 }
 

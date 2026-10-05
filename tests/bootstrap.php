@@ -32,5 +32,8 @@ if (file_exists(__DIR__ . '/../includes/functions.php')) {
 if (file_exists(__DIR__ . '/../includes/LibraryService.php')) {
     require_once __DIR__ . '/../includes/LibraryService.php';
 }
+if (file_exists(__DIR__ . '/../includes/notifier.php')) {
+    require_once __DIR__ . '/../includes/notifier.php';
+}
 
 require_once __DIR__ . '/TestCase.php';

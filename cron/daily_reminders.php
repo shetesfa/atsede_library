@@ -4,27 +4,31 @@
  *
  * Run daily at 08:00 (server time) via Windows Task Scheduler or cPanel cron:
  *   php C:\xampp\htdocs\atsede_library\cron\daily_reminders.php
+ * Or via secured HTTP GET request:
+ *   https://example.com/cron/daily_reminders.php?token=CRON_TOKEN
  *
  * What it does:
  *  1. Recalculates overdue fines (5 ብር/ቀን)
- *  2. Sends Telegram reminder to members whose books are due tomorrow
- *  3. Sends Telegram overdue alert to members who are late (with fine)
- *  4. Sends monthly payment reminder on 1st of each month
- *  5. Notifies librarians of total overdue count
+ *  2. Sends due-tomorrow reminders (with reminder_log deduplication)
+ *  3. Sends overdue alerts (with reminder_log deduplication)
+ *  4. Sends monthly payment reminder on 1st of Ethiopian month
+ *  5. Notifies librarians of total overdue stats
  */
-
-// Allow CLI or localhost only
-if (PHP_SAPI !== 'cli') {
-    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
-    if (!in_array($ip, ['127.0.0.1', '::1'], true)) {
-        http_response_code(403);
-        exit("Access denied. Run from CLI or localhost only.\n");
-    }
-}
 
 define('RUNNING_CRON', true);
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/notifier.php';
+
+// Allow CLI or valid CRON_TOKEN query parameter only
+if (PHP_SAPI !== 'cli') {
+    $cronToken = get_setting($conn, 'cron_token', 'atsede_cron_sec_89d3fa6b');
+    $providedToken = $_GET['token'] ?? '';
+    if (empty($providedToken) || !hash_equals($cronToken, $providedToken)) {
+        http_response_code(403);
+        exit("Access denied. Run from CLI or provide valid ?token=CRON_TOKEN.\n");
+    }
+}
 
 $today     = date('Y-m-d');
 $tomorrow  = date('Y-m-d', strtotime('+1 day'));
@@ -43,29 +47,42 @@ echo "[OK] Fines recalculated.\n";
 // =====================================================================
 $resDue = mysqli_query($conn,
     "SELECT br.id, br.due_date, br.book_id, b.title,
-            u.id AS user_id, u.full_name, u.telegram_chat_id, u.telegram_joined
+            u.id AS user_id, u.full_name, u.telegram_chat_id, u.telegram_joined,
+            m.id AS member_id
      FROM borrow_records br
      JOIN members m ON m.id = br.member_id
      JOIN users u ON u.id = m.user_id
      JOIN books b ON b.id = br.book_id
      WHERE br.status = 'borrowed'
-       AND br.due_date = '$tomorrow'
-       AND u.telegram_joined = 1
-       AND u.telegram_chat_id IS NOT NULL");
+       AND br.due_date = '$tomorrow'");
 
 $dueSent = 0;
 while ($row = mysqli_fetch_assoc($resDue)) {
-    $cleanTitle = htmlspecialchars($row['title'] ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-    $cleanDate  = htmlspecialchars(formatDate($row['due_date']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-    $msg = "⏰ <b>ማስታወሻ — ነገ ይመለሳል!</b>\n\n" .
-           "📖 <b>" . $cleanTitle . "</b>\n" .
-           "📅 የመመለሻ ቀን: " . $cleanDate . "\n\n" .
-           "❗ ነገ ቤተ-መጻሕፍቱ ያምጡ። ካልተመለሰ ቅጣት ይጀምራል (5 ብር/ቀን)።";
-    if (telegram_send($conn, $row['telegram_chat_id'], $msg)) {
-        $dueSent++;
-        notify($conn, $row['user_id'], 'ነገ ይመለሳል', ($row['title'] ?? '') . ' — ነገ ለቤተ-መጻሕፍቱ ይምጡ።', 'due_reminder', 'member/my_books.php');
+    $memberId = (int)$row['member_id'];
+    if (!should_send_reminder($conn, $memberId, 'due_tomorrow', $today)) {
+        continue;
     }
-    usleep(100000); // 100ms
+
+    $cleanTitle = $row['title'] ?? '';
+    $cleanDate  = formatDate($row['due_date']);
+    $msgText = '"' . $cleanTitle . '" — የመመለሻ ቀን ነገ (' . $cleanDate . ') ነው። እባክዎ ነገ ለቤተ-መጻሕፍቱ ያምጡ። ካልተመለሰ ቅጣት ይጀምራል (5 ብር/ቀን)።';
+
+    try {
+        notify_user(
+            $conn,
+            (int)$row['user_id'],
+            'ነገ ይመለሳል',
+            $msgText,
+            'due_reminder',
+            'member/my_books.php',
+            ['inapp', 'telegram', 'push']
+        );
+        $dueSent++;
+    } catch (Throwable $e) {
+        // Individual notification failure must not crash cron
+        error_log("Cron due reminder failed for user {$row['user_id']}: " . $e->getMessage());
+    }
+    usleep(50000); // 50ms
 }
 echo "[OK] Due-tomorrow reminders sent: $dueSent\n";
 
@@ -82,30 +99,41 @@ $resOverdue = mysqli_query($conn,
      JOIN users u ON u.id = m.user_id
      JOIN books b ON b.id = br.book_id
      WHERE br.status = 'borrowed'
-       AND br.due_date < '$today'
-       AND u.telegram_joined = 1
-       AND u.telegram_chat_id IS NOT NULL");
+       AND br.due_date < '$today'");
 
 $overdueSent = 0;
 while ($row = mysqli_fetch_assoc($resOverdue)) {
+    $memberId = (int)$row['member_id'];
+    if (!should_send_reminder($conn, $memberId, 'overdue', $today)) {
+        continue;
+    }
+
     $daysLate   = (int)(new DateTime($today))->diff(new DateTime($row['due_date']))->days;
-    $netFine    = max(0, (float)$row['overdue_fine'] - (float)$row['fine_paid'] - (float)$row['fine_waived']);
-    $cleanTitle = htmlspecialchars($row['title'] ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-    $cleanDate  = htmlspecialchars(formatDate($row['due_date']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $netFine    = max(0.00, (float)$row['overdue_fine'] - (float)$row['fine_paid'] - (float)$row['fine_waived']);
+    $cleanTitle = $row['title'] ?? '';
+    $cleanDate  = formatDate($row['due_date']);
 
-    $msg = "🚨 <b>አሳሳቢ — መጽሐፉ ዘግይቷል!</b>\n\n" .
-           "📖 <b>" . $cleanTitle . "</b>\n" .
-           "📅 ይጠናቀቅ ነበረ: " . $cleanDate . "\n" .
-           "⏳ ዘግይቷል: <b>$daysLate ቀን</b>\n";
+    $msgText = '📖 "' . $cleanTitle . '" የመመለሻ ቀን (' . $cleanDate . ') አልፏል (' . $daysLate . ' ቀን ዘግይቷል)።';
     if ($netFine > 0) {
-        $msg .= "💸 ቅጣት: <b>" . number_format($netFine, 2) . " ብር</b>\n";
+        $msgText .= ' 💸 ቅጣት፦ ' . number_format($netFine, 2) . ' ብር።';
     }
-    $msg .= "\nእባክዎ ዛሬ ቤተ-መጻሕፍቱ ያምጡ። ቅጣቱ ቀን ቀን ይጨምራል።";
+    $msgText .= ' እባክዎ ዛሬውኑ ቤተ-መጻሕፍቱ ያምጡ። ቅጣቱ ቀን በቀን ይጨምራል።';
 
-    if (telegram_send($conn, $row['telegram_chat_id'], $msg)) {
+    try {
+        notify_user(
+            $conn,
+            (int)$row['user_id'],
+            'አሳሳቢ — መጽሐፉ ዘግይቷል!',
+            $msgText,
+            'overdue',
+            'member/my_books.php',
+            ['inapp', 'telegram', 'push']
+        );
         $overdueSent++;
+    } catch (Throwable $e) {
+        error_log("Cron overdue alert failed for user {$row['user_id']}: " . $e->getMessage());
     }
-    usleep(100000);
+    usleep(50000);
 }
 echo "[OK] Overdue alerts sent: $overdueSent\n";
 
@@ -127,8 +155,6 @@ if ($isFirstEthDay) {
          FROM members m
          JOIN users u ON u.id = m.user_id
          WHERE u.status = 'active'
-           AND u.telegram_joined = 1
-           AND u.telegram_chat_id IS NOT NULL
            AND m.id NOT IN (
                SELECT member_id FROM membership_payments
                WHERE payment_month = '$thisMonthSafe'
@@ -137,15 +163,28 @@ if ($isFirstEthDay) {
 
     $payReminderSent = 0;
     while ($row = mysqli_fetch_assoc($resUnpaid)) {
-        $msg = "💰 <b>ወርሃዊ ክፍያ ማስታወሻ</b>\n\n" .
-               "📅 ወር: <b>$monthLabel</b>\n" .
-               "📋 ዝቅተኛ ክፍያ: <b>$minPaymentDisplay ብር</b>\n\n" .
-               "❗ ክፍያዎን ቤተ-መጻሕፍቱ ሄደው ያስፈጽሙ።\n" .
-               "ካልተከፈለ ለዚህ ወር መጽሐፍ ማዋስ አይፈቀድም።";
-        if (telegram_send($conn, $row['telegram_chat_id'], $msg)) {
-            $payReminderSent++;
+        $memberId = (int)$row['member_id'];
+        if (!should_send_reminder($conn, $memberId, 'monthly_payment', $today)) {
+            continue;
         }
-        usleep(100000);
+
+        $payMsg = "💰 ወርሃዊ ክፍያ ማስታወሻ (" . $monthLabel . ")\nዝቅተኛ ክፍያ፦ " . $minPaymentDisplay . " ብር። እባክዎ ክፍያዎን ቤተ-መጻሕፍቱ ሄደው ያስፈጽሙ።";
+
+        try {
+            notify_user(
+                $conn,
+                (int)$row['user_id'],
+                'ወርሃዊ ክፍያ ማስታወሻ',
+                $payMsg,
+                'payment_reminder',
+                'member/payments.php',
+                ['inapp', 'telegram', 'push']
+            );
+            $payReminderSent++;
+        } catch (Throwable $e) {
+            error_log("Cron payment reminder failed for user {$row['user_id']}: " . $e->getMessage());
+        }
+        usleep(50000);
     }
     echo "[OK] Monthly payment reminders sent: $payReminderSent\n";
 }
@@ -161,9 +200,8 @@ $overdueCount = (int)($statsRow['cnt']        ?? 0);
 $totalFine    = (float)($statsRow['total_fine'] ?? 0);
 
 if ($overdueCount > 0) {
-    // Send to all librarians and admins who have Telegram
     $resStaff = mysqli_query($conn,
-        "SELECT telegram_chat_id FROM users
+        "SELECT id, telegram_chat_id FROM users
          WHERE role IN ('librarian','admin')
            AND telegram_joined=1 AND telegram_chat_id IS NOT NULL");
     while ($staff = mysqli_fetch_assoc($resStaff)) {
@@ -171,8 +209,12 @@ if ($overdueCount > 0) {
                     "⚠️ ዘግይቷል: <b>$overdueCount</b> ውሰቶች\n" .
                     "💸 ጠቅላላ ቅጣት: <b>" . number_format($totalFine, 2) . " ብር</b>\n\n" .
                     "ዝርዝር ለማየት ዳሽቦርድ ይክፈቱ።";
-        telegram_send($conn, $staff['telegram_chat_id'], $staffMsg);
-        usleep(100000);
+        try {
+            telegram_send($conn, $staff['telegram_chat_id'], $staffMsg);
+        } catch (Throwable $e) {
+            // Non-fatal
+        }
+        usleep(50000);
     }
 }
 
