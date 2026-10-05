@@ -8,6 +8,38 @@
 // Timezone configuration (Africa/Addis_Ababa, UTC+3)
 date_default_timezone_set('Africa/Addis_Ababa');
 
+// Centralized error logging
+error_reporting(E_ALL);
+$appEnv = $_ENV['APP_ENV'] ?? $_SERVER['APP_ENV'] ?? 'production';
+$logsDir = __DIR__ . '/logs';
+if (!is_dir($logsDir)) {
+    @mkdir($logsDir, 0750, true);
+    @file_put_contents($logsDir . '/.htaccess', "Order deny,allow\nDeny from all\n");
+}
+ini_set('log_errors', '1');
+ini_set('error_log', $logsDir . '/error.log');
+
+if ($appEnv === 'production') {
+    ini_set('display_errors', '0');
+    ini_set('display_startup_errors', '0');
+
+    // Polite Amharic error page for fatal unhandled exceptions
+    register_shutdown_function(function() {
+        $error = error_get_last();
+        if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+            if (!headers_sent()) {
+                http_response_code(500);
+                header('Content-Type: text/html; charset=utf-8');
+            }
+            if (PHP_SAPI !== 'cli') {
+                echo '<!DOCTYPE html><html lang="am"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ስህተት ተከስቷል</title><style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f8fafc;color:#1e293b;text-align:center;padding:20px;}.card{background:#fff;border-radius:16px;padding:32px;box-shadow:0 4px 16px rgba(0,0,0,0.08);max-width:440px;}h2{margin:0 0 12px;color:#a61d21;}p{color:#64748b;font-size:0.95rem;line-height:1.6;}a{display:inline-block;margin-top:16px;padding:10px 20px;background:#a61d21;color:#fff;text-decoration:none;border-radius:10px;font-weight:bold;}</style></head><body><div class="card"><h2>ይቅርታ!</h2><p>ያልተጠበቀ የቴክኒክ ችግር አጋጥሟል። ችግሩ ለቴክኒክ ቡድኑ ተመዝግቧል፤ እባክዎ ከጥቂት ደቂቃዎች በኋላ እንደገና ይሞክሩ።</p><a href="/">ወደ ዋና ገጽ ተመለስ</a></div></body></html>';
+            }
+        }
+    });
+} else {
+    ini_set('display_errors', '1');
+}
+
 // Project-specific session name and secure cookie parameters
 if (session_status() === PHP_SESSION_NONE) {
     ini_set('session.use_strict_mode', '1');
