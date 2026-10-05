@@ -1,0 +1,13 @@
+<?php
+/**
+ * Example Remote Database Configuration
+ * Template only - do not commit real credentials.
+ */
+
+return [
+    'host' => 'example-db-host.com',
+    'user' => 'your_db_user',
+    'pass' => 'your_db_password',
+    'db'   => 'your_db_name',
+    'port' => 3306,
+];

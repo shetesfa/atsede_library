@@ -1,92 +1,112 @@
 <?php
 /**
- * config.php
- * Database connection + core date helpers for Atsede Library.
+ * config.php  —  Atsede Library
+ * Loads DB credentials from config.local.php (gitignored).
+ * config.local.php NEVER goes to Git or shared hosting public folders.
  */
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// ---- Database credentials --------------------------------------------
-$host = "localhost";
-$user = "root";
-$pass = "";
-$db   = "atsede_library";
+// ---- Load credentials from config.local.php or environment variables ---
+$localConfig = [];
+$_localCfg = __DIR__ . '/config.local.php';
+if (file_exists($_localCfg)) {
+    $res = require $_localCfg;
+    if (is_array($res)) {
+        $localConfig = $res;
+    }
+}
 
-$conn = mysqli_connect($host, $user, $pass, $db);
+$host = getenv('DB_HOST') ?: ($localConfig['host'] ?? ($host ?? 'localhost'));
+$user = getenv('DB_USER') ?: ($localConfig['user'] ?? ($user ?? 'root'));
+$pass = getenv('DB_PASS') !== false ? getenv('DB_PASS') : ($localConfig['pass'] ?? ($pass ?? ''));
+$db   = getenv('DB_NAME') ?: ($localConfig['db'] ?? ($db ?? 'atsede_library'));
+$port = (int)(getenv('DB_PORT') ?: ($localConfig['port'] ?? ($port ?? 3306)));
+
+$conn = @mysqli_connect($host, $user, $pass, $db, $port);
 if (!$conn) {
-    die("አገልግሎቱ ለጊዜው አይገኝም። እባክዎ ከጥቂት ደቂቃዎች በኋላ ይሞክሩ።");
+    error_log("Database connection error: " . mysqli_connect_error());
+    die("አገልግሎቱ ለጊዜው አይገኝም፤ እባክዎ ከጥቂት ደቂቃዎች በኋላ ይሞክሩ።");
 }
 mysqli_set_charset($conn, "utf8mb4");
 
+
 // Lightweight schema patch for existing installs
 $checkColumn = mysqli_query($conn, "SHOW COLUMNS FROM members LIKE 'blocked_until'");
-if (mysqli_num_rows($checkColumn) == 0) {
+if ($checkColumn && mysqli_num_rows($checkColumn) == 0) {
     mysqli_query($conn, "ALTER TABLE members ADD COLUMN blocked_until DATETIME DEFAULT NULL");
 }
 
 // Auto-detect base URL from current directory
-// Manual override: uncomment and set if auto-detection fails
-define('BASE_URL', '/');  // Use '/' for root-level hosting
-// define('BASE_URL', '/atsede_library');  // Use '/atsede_library' for subdirectory
-
 if (!defined('BASE_URL')) {
-    $scriptPath = dirname($_SERVER['SCRIPT_NAME']);
-    // Remove trailing slash for consistent comparison
-    $scriptPath = rtrim($scriptPath, '/');
-    $baseFolder = '/atsede_library';
-    if (strpos($scriptPath, $baseFolder) === 0) {
-        define('BASE_URL', $baseFolder);
+    $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? ''));
+    $projectDirName = basename(__DIR__);
+    $pos = strpos($scriptDir, '/' . $projectDirName);
+    if ($pos !== false) {
+        $detected = substr($scriptDir, 0, $pos + strlen($projectDirName) + 1);
+        define('BASE_URL', rtrim($detected, '/') . '/');
     } else {
-        // If at root or empty, use '/', otherwise use the detected path
-        define('BASE_URL', $scriptPath === '' || $scriptPath === '.' ? '/' : '/' . $scriptPath);
+        define('BASE_URL', '/');
     }
 }
 define('UPLOAD_DIR', __DIR__ . '/uploads/covers/');
-define('UPLOAD_URL', BASE_URL . '/uploads/covers/');
+define('UPLOAD_URL', rtrim(BASE_URL, '/') . '/uploads/covers/');
 
 // ---- Ethiopian calendar helpers ---------------------------------------
-function gregorianToEthiopian($gregorianDate) {
-    $date = new DateTime($gregorianDate);
+function gregorianToEthParts($gregorianDate) {
+    if (empty($gregorianDate) || $gregorianDate === '0000-00-00') return null;
+    $date     = new DateTime($gregorianDate);
     $gregYear = (int)$date->format('Y');
 
-    $ethNewYear = new DateTime("$gregYear-09-11");
-    if ($gregYear % 4 == 3) {
-        $ethNewYear = new DateTime("$gregYear-09-12");
-    }
+    // Ethiopian New Year is September 11 (or September 12 in year following leap year)
+    $newYearDay = ($gregYear % 4 === 3) ? 12 : 11;
+    $ethNewYear = new DateTime("$gregYear-09-$newYearDay");
 
     if ($date >= $ethNewYear) {
-        $ethYear = $gregYear - 7;
+        $ethYear    = $gregYear - 7;
         $refNewYear = $ethNewYear;
     } else {
         $prevYear = $gregYear - 1;
-        $refNewYear = new DateTime("$prevYear-09-11");
-        if ($prevYear % 4 == 3) {
-            $refNewYear = new DateTime("$prevYear-09-12");
-        }
-        $ethYear = $gregYear - 8;
+        $prevNewYearDay = ($prevYear % 4 === 3) ? 12 : 11;
+        $refNewYear = new DateTime("$prevYear-09-$prevNewYearDay");
+        $ethYear    = $gregYear - 8;
     }
 
     $daysDiff = $date->diff($refNewYear)->days;
     $ethMonth = (int)floor($daysDiff / 30) + 1;
-    $ethDay = ($daysDiff % 30) + 1;
+    $ethDay   = ($daysDiff % 30) + 1;
     if ($ethMonth > 13) { $ethMonth = 13; $ethDay = min($ethDay, 6); }
 
-    $months = [
-        1=>'Meskerem',2=>'Tikimt',3=>'Hidar',4=>'Tahsas',5=>'Tir',6=>'Yekatit',
-        7=>'Megabit',8=>'Miazia',9=>'Ginbot',10=>'Sene',11=>'Hamle',12=>'Nehase',13=>'Pagume'
+    return [
+        'year'  => $ethYear,
+        'month' => $ethMonth,
+        'day'   => $ethDay,
     ];
-    return $ethDay . ' ' . ($months[$ethMonth] ?? '') . ' ' . $ethYear;
+}
+
+function get_ethiopian_month_name($monthNum) {
+    $months = [
+        1  => 'መስከረም', 2  => 'ጥቅምት', 3  => 'ኅዳር',   4  => 'ታኅሣሥ',
+        5  => 'ጥር',     6  => 'የካቲት', 7  => 'መጋቢት', 8  => 'ሚያዝያ',
+        9  => 'ግንቦት',  10 => 'ሰኔ',    11 => 'ሐምሌ',  12 => 'ነሐሴ', 13 => 'ጳጉሜን'
+    ];
+    return $months[(int)$monthNum] ?? '';
+}
+
+function gregorianToEthiopian($gregorianDate) {
+    $parts = gregorianToEthParts($gregorianDate);
+    if (!$parts) return '—';
+    return $parts['day'] . ' ' . get_ethiopian_month_name($parts['month']) . ' ' . $parts['year'] . ' ዓ.ም.';
 }
 
 function formatDate($date) {
     if (empty($date) || $date === '0000-00-00') return '—';
-    return date('d M Y', strtotime($date));
+    return gregorianToEthiopian($date);
 }
 
 function formatEthiopianDate($dateString) {
-    if (empty($dateString) || $dateString === '0000-00-00') return '—';
     return gregorianToEthiopian($dateString);
 }
 

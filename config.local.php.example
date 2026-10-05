@@ -1,0 +1,14 @@
+<?php
+/**
+ * Example Local Database Configuration
+ * Copy this file to config.local.php and fill with your actual credentials.
+ * DO NOT commit config.local.php to git!
+ */
+
+return [
+    'host' => 'localhost',
+    'user' => 'root',
+    'pass' => '',
+    'db'   => 'atsede_library',
+    'port' => 3306,
+];

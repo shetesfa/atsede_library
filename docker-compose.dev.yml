@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  app:
+    image: php:8.2-apache
+    container_name: atsede_app_dev
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www/html
+    environment:
+      - DB_HOST=db
+      - DB_USER=atsede_user
+      - DB_PASS=atsede_pass
+      - DB_NAME=atsede_library
+      - DB_PORT=3306
+    depends_on:
+      - db
+
+  db:
+    image: mariadb:10.6
+    container_name: atsede_db_dev
+    ports:
+      - "3307:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpass
+      - MYSQL_DATABASE=atsede_library
+      - MYSQL_USER=atsede_user
+      - MYSQL_PASSWORD=atsede_pass
+    volumes:
+      - mariadb_dev_data:/var/lib/mysql
+      - ./database/if0_41150294_atsede_library.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+      - ./database/migration_production_upgrade.sql:/docker-entrypoint-initdb.d/02_upgrade.sql:ro
+
+volumes:
+  mariadb_dev_data:

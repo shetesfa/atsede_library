@@ -1,0 +1,13 @@
+<?php
+/**
+ * Example Backup Configuration
+ * Template only - do not commit real credentials.
+ */
+
+return [
+    'host' => 'localhost',
+    'user' => 'root',
+    'pass' => '',
+    'db'   => 'atsede_library',
+    'port' => 3306,
+];

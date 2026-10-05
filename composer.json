@@ -1,5 +1,8 @@
 {
     "require": {
         "minishlink/web-push": "^10.1"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5"
     }
 }

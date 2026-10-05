@@ -1,4 +1,4 @@
-﻿vendor/
+vendor/
 node_modules/
 *.zip
 *.tar.gz
@@ -10,3 +10,22 @@ node_modules/
 Thumbs.db
 .vscode/
 .idea/
+.phpunit.cache/
+
+# Sensitive database dumps and backups
+*.sql
+backups/
+tmp/
+
+# Uploads
+uploads/avatars/
+uploads/covers/*
+!uploads/covers/.gitkeep
+
+# Credentials and secrets
+config.local.php
+config.remote.php
+config.php.backup
+
+# Downloads
+download/*.apk
