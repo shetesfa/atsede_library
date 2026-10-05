@@ -707,10 +707,72 @@ function get_qr_url($qrIdentifier) {
  * Send a plain-text or HTML message to a Telegram chat, optionally with a custom keyboard.
  * Returns true on success, false on failure.
  */
-function telegram_send($conn, $chatId, $text, $replyMarkup = null) {
-    $token = get_setting($conn, 'telegram_bot_token', '');
-    if (!$token || !$chatId) return false;
+/**
+ * Unified Telegram API caller.
+ * Handles rate limits (429), blocked bot status (403), SSL verification, and testing mocks.
+ */
+function telegram_api($method, array $payload = [], $botToken = null) {
+    global $conn;
 
+    // Check if testing mock transport is active
+    if (class_exists('Tests\FakeTelegram', false)) {
+        return \Tests\FakeTelegram::record($method, $payload);
+    }
+
+    $token = $botToken;
+    if (!$token && isset($conn) && $conn instanceof mysqli) {
+        $token = get_setting($conn, 'telegram_bot_token', '');
+    }
+    if (!$token) {
+        return ['ok' => false, 'description' => 'Bot token not configured'];
+    }
+
+    $url = "https://api.telegram.org/bot{$token}/{$method}";
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => json_encode($payload),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+        CURLOPT_TIMEOUT        => 15,
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $res = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+
+    if ($err) {
+        error_log("Telegram API Error ($method): " . $err);
+        return ['ok' => false, 'description' => $err];
+    }
+
+    $decoded = json_decode($res, true) ?: [];
+
+    // Handle HTTP 429 (rate limiting)
+    if ($httpCode === 429) {
+        $retryAfter = (int)($decoded['parameters']['retry_after'] ?? 5);
+        error_log("Telegram API rate limited (429). Retry after: {$retryAfter}s");
+    }
+
+    // Handle HTTP 403 (bot blocked by user)
+    if ($httpCode === 403) {
+        $chatId = (int)($payload['chat_id'] ?? 0);
+        if ($chatId && isset($conn) && $conn instanceof mysqli) {
+            $stmt = mysqli_prepare($conn, "UPDATE users SET telegram_joined = 0 WHERE telegram_chat_id = ?");
+            if ($stmt) {
+                mysqli_stmt_bind_param($stmt, 'i', $chatId);
+                mysqli_stmt_execute($stmt);
+                mysqli_stmt_close($stmt);
+            }
+        }
+    }
+
+    return $decoded;
+}
+
+function telegram_send($conn, $chatId, $text, $replyMarkup = null) {
+    if (!$chatId) return false;
     $payload = [
         'chat_id'    => (int)$chatId,
         'text'       => $text,
@@ -719,26 +781,25 @@ function telegram_send($conn, $chatId, $text, $replyMarkup = null) {
     if ($replyMarkup !== null) {
         $payload['reply_markup'] = $replyMarkup;
     }
+    $res = telegram_api('sendMessage', $payload);
+    return isset($res['ok']) && $res['ok'] === true;
+}
 
-    $url  = "https://api.telegram.org/bot{$token}/sendMessage";
-    $data = json_encode($payload);
+/**
+ * Generate secure one-time token for Telegram account binding (valid for 48 hours)
+ */
+function generate_telegram_verify_token($conn, $userId) {
+    $rawToken = bin2hex(random_bytes(16));
+    $hashedToken = hash('sha256', $rawToken);
+    $expires = date('Y-m-d H:i:s', strtotime('+48 hours'));
 
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => $data,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
-        CURLOPT_TIMEOUT        => 8,
-        CURLOPT_SSL_VERIFYPEER => false,
-    ]);
-    $res = curl_exec($ch);
-    $err = curl_errno($ch);
-    curl_close($ch);
-
-    if ($err) return false;
-    $decoded = json_decode($res, true);
-    return isset($decoded['ok']) && $decoded['ok'] === true;
+    $stmt = mysqli_prepare($conn, "UPDATE users SET telegram_verify_token = ?, telegram_verify_expires = ? WHERE id = ?");
+    if ($stmt) {
+        mysqli_stmt_bind_param($stmt, 'ssi', $hashedToken, $expires, $userId);
+        mysqli_stmt_execute($stmt);
+        mysqli_stmt_close($stmt);
+    }
+    return $rawToken;
 }
 
 /**
@@ -757,13 +818,18 @@ function get_bot_main_keyboard() {
 }
 
 /**
- * Send Telegram message to a user by user_id (looks up their chat_id).
+ * Send Telegram message to a user by user_id (looks up their chat_id using prepared statement).
  */
 function telegram_notify_user($conn, $userId, $text, $replyMarkup = null) {
     $uid = (int)$userId;
-    $row = mysqli_fetch_assoc(mysqli_query($conn,
-        "SELECT telegram_chat_id, telegram_joined FROM users WHERE id=$uid LIMIT 1"));
-    if (!$row || !$row['telegram_chat_id']) return false;
+    $stmt = mysqli_prepare($conn, "SELECT telegram_chat_id, telegram_joined FROM users WHERE id = ? LIMIT 1");
+    if (!$stmt) return false;
+    mysqli_stmt_bind_param($stmt, 'i', $uid);
+    mysqli_stmt_execute($stmt);
+    $row = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+    mysqli_stmt_close($stmt);
+
+    if (!$row || !$row['telegram_chat_id'] || empty($row['telegram_joined'])) return false;
     return telegram_send($conn, $row['telegram_chat_id'], $text, $replyMarkup);
 }
 

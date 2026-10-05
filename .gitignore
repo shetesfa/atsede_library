@@ -14,6 +14,7 @@ Thumbs.db
 
 # Sensitive database dumps and backups
 *.sql
+!database/migrations/*.sql
 backups/
 tmp/
 

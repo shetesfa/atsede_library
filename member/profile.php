@@ -76,6 +76,7 @@ $borrowCount = $memberId ? (int)mysqli_fetch_assoc(mysqli_query($conn,
 $idCardQrData = rtrim(BASE_URL, '/') . '/ajax/member_info.php?uid=' . (int)$user['id'];
 $tgJoined     = (int)($row['telegram_joined'] ?? 0);
 $botUsername  = get_setting($conn, 'telegram_bot_username', 'Atsedeteguhan_library_bot');
+$tgVerifyToken = !$tgJoined ? generate_telegram_verify_token($conn, $user['id']) : '';
 $idFormatted  = '#' . str_pad($user['id'], 5, '0', STR_PAD_LEFT);
 
 $photoUrl = '';
@@ -284,8 +285,8 @@ include __DIR__ . '/../includes/header.php';
         <div class="text-muted" style="font-size:.82rem;margin-top:2px;">
           የመመለሻ ቀን ማስታወሻዎች እና የቤተ-መጻሕፍቱ ፈጣን መልዕክቶች እንዲደርስዎት ቦቱን ያስጀምሩ።
         </div>
-        <?php if ($botUsername): ?>
-          <a href="https://t.me/<?= e($botUsername) ?>?start=verify_<?= $user['id'] ?>"
+        <?php if ($botUsername && $tgVerifyToken): ?>
+          <a href="https://t.me/<?= e($botUsername) ?>?start=verify_<?= urlencode($tgVerifyToken) ?>"
              target="_blank" class="btn btn-sm mt-2"
              style="background:#229ED9;color:#fff;font-weight:700;border-radius:20px;padding:6px 16px;">
             <i class="bi bi-telegram me-1"></i> ቦቱን ያስጀምሩ (@<?= e($botUsername) ?>)
