@@ -1,15 +1,22 @@
 {
-  "name": "Atsede Library",
-  "short_name": "Atsede",
-  "description": "Church & School Library Management System",
-  "start_url": "/atsede_library/index.php",
-  "scope": "/atsede_library/",
+  "name": "ዓጸደ ማርያም ቤተ-መጻሕፍት",
+  "short_name": "ዓጸደ ቤተ-መጻሕፍት",
+  "description": "የቤተ ክርስቲያንና የትምህርት ቤት ቤተ መጻሕፍት መተግበሪያ",
+  "start_url": "./index.php",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0F172A",
   "theme_color": "#0F172A",
   "orientation": "portrait-primary",
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  },
+  "handle_links": "preferred",
+  "capture_links": "existing_client_navigate",
   "icons": [
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
-    { "src": "icons/icon-512.png", "sizes": "192x192", "type": "image/png" }
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" }
   ]
 }

@@ -3,19 +3,34 @@
    Offline shell caching + Web Push display.
    ========================================================= */
 
-const CACHE_NAME = 'atsede-v7';
+const CACHE_NAME = 'atsede-v12';
 const OFFLINE_URL = './offline.php';
 const PRECACHE = [
   './index.php',
+  './scan.php',
   './offline.php',
-  './assets/css/style.css?v=7',
+  './search.php',
+  './qr.php',
+  './assets/css/style.css',
   './assets/js/app.js',
+  './assets/js/offline-engine.js',
+  './assets/js/jsQR.min.js',
+  './assets/js/qrcode.min.js',
   './assets/icons/icon-512.png',
+  './assets/icons/icon-192.png',
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then(async (cache) => {
+      for (const item of PRECACHE) {
+        try {
+          await cache.add(item);
+        } catch (err) {
+          // Graceful fallback for non-fatal precache misses
+        }
+      }
+    }).then(() => self.skipWaiting())
   );
 });
 
@@ -38,7 +53,15 @@ self.addEventListener('fetch', (event) => {
         const copy = res.clone();
         caches.open(CACHE_NAME).then((c) => c.put(req, copy));
         return res;
-      }).catch(() => caches.match(req).then((c) => c || caches.match(OFFLINE_URL)))
+      }).catch(async () => {
+        const cached = await caches.match(req);
+        if (cached) return cached;
+        if (req.url.includes('scan.php')) {
+          const scanCached = await caches.match('./scan.php');
+          if (scanCached) return scanCached;
+        }
+        return caches.match(OFFLINE_URL);
+      })
     );
     return;
   }
