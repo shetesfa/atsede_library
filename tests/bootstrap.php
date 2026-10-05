@@ -22,7 +22,10 @@ if ($conn->connect_error) {
 }
 $conn->set_charset("utf8mb4");
 
-// Load core functions and configs if available
+// Load core config and functions
+if (file_exists(__DIR__ . '/../config.php')) {
+    require_once __DIR__ . '/../config.php';
+}
 if (file_exists(__DIR__ . '/../includes/functions.php')) {
     require_once __DIR__ . '/../includes/functions.php';
 }

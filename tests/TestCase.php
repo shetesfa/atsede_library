@@ -73,7 +73,7 @@ abstract class TestCase extends BaseTestCase {
         $stmt->close();
 
         // Also add a payment for current month so member is considered paid
-        $currentMonth = date('Y-m');
+        $currentMonth = function_exists('current_billing_month') ? current_billing_month() : date('Y-m');
         $amount = 50.00;
         $stmtPay = $this->conn->prepare("INSERT INTO membership_payments (member_id, payment_month, amount, sync_status) VALUES (?, ?, ?, 'synced')");
         $stmtPay->bind_param("isd", $memberId, $currentMonth, $amount);
@@ -160,5 +160,36 @@ abstract class TestCase extends BaseTestCase {
         }
 
         return $user;
+    }
+
+    protected function logout(): void {
+        $_SESSION = [];
+    }
+
+    protected function create_user(string $role = 'member', string $status = 'active'): array {
+        $id = $this->createUser($role, $status);
+        $stmt = $this->conn->prepare("SELECT * FROM users WHERE id = ?");
+        $stmt->bind_param("i", $id);
+        $stmt->execute();
+        $user = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $user;
+    }
+
+    protected function create_member(?int $userId = null, string $status = 'active'): int {
+        $mem = $this->createMember($userId, $status);
+        return $mem['id'];
+    }
+
+    protected function create_book_with_copies(int $copiesCount = 1, int $isBorrowable = 1): array {
+        $res = $this->createBookWithCopies($copiesCount, $isBorrowable);
+        return [
+            'book' => ['id' => $res['id'], 'title' => $res['title']],
+            'copies' => $res['copies']
+        ];
+    }
+
+    protected function login_as(string $role, ?int $userId = null): array {
+        return $this->loginAs($role, $userId);
     }
 }

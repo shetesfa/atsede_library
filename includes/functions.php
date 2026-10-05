@@ -619,11 +619,16 @@ function verify_borrow_eligibility($conn, $memberId, $bookId, $copyId = null) {
     }
 
     // 5. Max active borrows check
-    $maxBorrows = (int)get_setting($conn, 'max_active_borrows', 3);
+    $maxBorrows = (int)($member['max_borrow_limit'] ?? get_setting($conn, 'max_active_borrows', 3));
     $activeBorrows = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM borrow_records WHERE member_id = $memberId AND status = 'borrowed'"))['c'];
     $borrowLimitOk = ($activeBorrows < $maxBorrows);
 
-    $canBorrow = ($memberValid && $paymentValid && $bookBorrowable && $copyAvailable && $borrowLimitOk);
+    // 6. Outstanding fines check
+    $maxFineAllowed = (float)get_setting($conn, 'max_allowed_unpaid_fine', 0.00);
+    $outstandingFine = (float)get_member_outstanding_fine($conn, $memberId);
+    $fineOk = ($outstandingFine <= $maxFineAllowed);
+
+    $canBorrow = ($memberValid && $paymentValid && $bookBorrowable && $copyAvailable && $borrowLimitOk && $fineOk);
 
     return [
         'can_borrow' => $canBorrow,
@@ -659,6 +664,11 @@ function verify_borrow_eligibility($conn, $memberId, $bookId, $copyId = null) {
                 'passed' => $borrowLimitOk,
                 'title' => 'የውሰት ብዛት ገደብ',
                 'detail' => $borrowLimitOk ? "በውሰት ላይ ያለ፦ $activeBorrows / $maxBorrows" : "ከፍተኛ የውሰት ገደብ ($maxBorrows) ላይ ደርሷል"
+            ],
+            'fines' => [
+                'passed' => $fineOk,
+                'title' => 'ያልተከፈለ ቅጣት',
+                'detail' => $fineOk ? "ምንም የሚጠበቅ ቅጣት የለም" : "ያልተከፈለ ቅጣት አለበት፦ " . number_format($outstandingFine, 2) . " ብር"
             ]
         ]
     ];
