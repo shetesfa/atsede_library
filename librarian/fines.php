@@ -107,7 +107,7 @@ if ($receiptId > 0) {
         ?>
         <div class="card card-pad mb-3" style="max-width:550px;margin:20px auto;border:2px dashed var(--primary);">
             <div style="text-align:center;border-bottom:1px solid #eee;padding-bottom:12px;margin-bottom:15px;">
-                <h3 style="margin:0 0 5px 0;">የዓጸደ ማርያም ቤተ-መጻሕፍት</h3>
+                <h3 style="margin:0 0 5px 0;"><?= e(library_name($conn)) ?></h3>
                 <h4 style="margin:0;color:var(--primary);">የቅጣት ክፍያ ደረሰኝ</h4>
                 <div class="text-muted" style="font-size:0.85rem;margin-top:4px;">ደረሰኝ ቁጥር፦ #<?= e($receipt['id']) ?> | ቀን፦ <?= e(formatDate(substr($receipt['paid_at'], 0, 10))) ?></div>
             </div>

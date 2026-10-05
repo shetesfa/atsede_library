@@ -8,7 +8,7 @@
 
 $GLOBALS['__LANG'] = [
     // Brand / nav
-    'app_name' => 'አጸደ ቤተ መጻሕፍት',
+    'app_name' => 'ቤተ ይትባረክ ቤተ-መጽሃፍት',
     'home' => 'መግቢያ',
     'search' => 'ፍለጋ',
     'categories' => 'ምድቦች',
@@ -101,6 +101,28 @@ $GLOBALS['__LANG'] = [
     'no_books_found' => 'መጽሐፍ አልተገኘም',
     'request_this_book' => 'ይህን መጽሐፍ ይጠይቁ',
     'pending_approval' => 'ለማረጋገጫ በመጠባበቅ ላይ',
+
+    // Payments
+    'payments' => 'ክፍያዎች',
+    'payment_history' => 'የክፍያ ታሪክ',
+    'record_payment' => 'ክፍያ መዝግብ',
+    'monthly_fee' => 'የዚህ ወር ክፍያ',
+    'paid' => 'ተከፍሏል',
+    'not_paid' => 'አልተከፈለም',
+    'amount' => 'የተከፈለው መጠን',
+    'month' => 'ወር',
+    'minimum_payment' => 'ዝቅተኛ ወርሃዊ ክፍያ',
+
+    // Borrowability & QR
+    'borrowable' => 'ለመዋስ ይችላል',
+    'not_borrowable' => 'ለመዋስ አይቻልም',
+    'borrow_reason' => 'የመዋስ እገዳ ምክንያት',
+    'scan_qr' => 'QR ኮድ ስካን',
+    'qr_code' => 'QR ኮድ',
+    'favorites' => 'ወደፊት የማነባቸው',
+    'notify_when_available' => 'ሲገኝ አሳውቀኝ',
+    'borrow_now' => 'መጽሐፍ አበድር / አስረክብ',
+    'checklist' => 'የማረጋገጫ ዝርዝር',
 ];
 
 /**
