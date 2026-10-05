@@ -2,28 +2,26 @@
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/nav_config.php';
+require_once __DIR__ . '/../includes/LibraryService.php';
 require_role(['librarian','admin']);
 
 $user = current_user();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify();
-    $recordId = (int)$_POST['record_id'];
+    $recordId = (int)($_POST['record_id'] ?? 0);
     $action = $_POST['action'] ?? 'returned';
 
-    $record = mysqli_fetch_assoc(mysqli_query($conn, "
-        SELECT br.*, m.user_id AS member_user_id, b.title FROM borrow_records br
-        JOIN members m ON m.id=br.member_id JOIN books b ON b.id=br.book_id
-        WHERE br.id=$recordId AND br.status='borrowed'"));
-
-    if ($record) {
-        $newCopyStatus = $action === 'lost' ? 'lost' : ($action === 'damaged' ? 'damaged' : 'available');
-        $recordStatus = $action === 'lost' ? 'lost' : 'returned';
-        mysqli_query($conn, "UPDATE book_copies SET status='$newCopyStatus' WHERE id=" . (int)$record['book_copy_id']);
-        mysqli_query($conn, "UPDATE borrow_records SET status='$recordStatus', returned_at=NOW(), returned_to=" . (int)$user['id'] . " WHERE id=$recordId");
-        notify($conn, $record['member_user_id'], 'መጽሐፍ ተመለሰ', '"' . $record['title'] . '"ን ስለመለሱ እናመስግናለን።', 'general', 'member/my_books.php');
-        audit($conn, $user['id'], 'book_returned', "record_id:$recordId action:$action");
-        flash('msg', 'ተመላሹ ተመዝግቧል።', 'success');
+    $rec = mysqli_fetch_assoc(mysqli_query($conn, "SELECT book_copy_id FROM borrow_records WHERE id = $recordId"));
+    if ($rec) {
+        $result = return_copy($conn, (int)$rec['book_copy_id'], $action, '', (int)$user['id']);
+        if ($result['success']) {
+            flash('msg', $result['message'], 'success');
+        } else {
+            flash('msg', $result['message'], 'danger');
+        }
+    } else {
+        flash('msg', 'የውሰት መዝገቡ አልተገኘም።', 'warning');
     }
     redirect('returns.php');
 }

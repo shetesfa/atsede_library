@@ -8,6 +8,7 @@
 
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/LibraryService.php';
 
 global $conn;
 
@@ -178,7 +179,6 @@ foreach ($data['events'] as $ev) {
                 case 'BORROW':
                     $memberId   = (int)($payload['member_id'] ?? 0);
                     $copyId     = (int)($payload['copy_id'] ?? 0);
-                    $bookId     = (int)($payload['book_id'] ?? 0);
                     $borrowDays = (int)get_setting($conn, 'borrow_days', 14);
                     $dueDate    = date('Y-m-d', strtotime("+{$borrowDays} days", $eventTime));
 
@@ -188,85 +188,20 @@ foreach ($data['events'] as $ev) {
                         break;
                     }
 
-                    mysqli_begin_transaction($conn);
-
-                    // 1. Lock and inspect the copy
-                    $copyLockStmt = mysqli_prepare($conn, "SELECT id, book_id, status FROM book_copies WHERE id = ? FOR UPDATE");
-                    mysqli_stmt_bind_param($copyLockStmt, 'i', $copyId);
-                    mysqli_stmt_execute($copyLockStmt);
-                    $copyRow = mysqli_fetch_assoc(mysqli_stmt_get_result($copyLockStmt));
-                    mysqli_stmt_close($copyLockStmt);
-
-                    if (!$copyRow) {
-                        mysqli_rollback($conn);
+                    $res = issue_copy($conn, $memberId, $copyId, $dueDate, $userId, '', null, $uuid);
+                    if ($res['success']) {
+                        $eventStatus = 'synced';
+                        $eventMessage = 'መጽሐፉ በተሳካ ሁኔታ ተዋሰ (የመመለሻ ቀን: ' . formatDate($dueDate) . ')';
+                    } else {
                         $eventStatus = 'rejected';
-                        $eventMessage = 'የመጽሐፍ ቅጂው አልተገኘም።';
-                        break;
+                        $eventMessage = $res['message'];
                     }
-
-                    if ($bookId <= 0) {
-                        $bookId = (int)$copyRow['book_id'];
-                    }
-
-                    if ($copyRow['status'] !== 'available') {
-                        mysqli_rollback($conn);
-                        $eventStatus = 'rejected';
-                        $eventMessage = 'ይህ የመጽሐፍ ቅጂ በአሁኑ ሰዓት ዝግጁ አይደለም (ሁኔታ፦ ' . $copyRow['status'] . ')።';
-                        break;
-                    }
-
-                    // 2. Strict eligibility checks (Active, not blocked, paid month, borrowable, borrow limit, fines)
-                    $eligibility = verify_borrow_eligibility($conn, $memberId, $bookId, $copyId);
-                    if (!$eligibility['can_borrow']) {
-                        mysqli_rollback($conn);
-                        $eventStatus = 'rejected';
-                        $reasons = [];
-                        foreach ($eligibility['checks'] as $c) {
-                            if (!$c['passed']) {
-                                $reasons[] = $c['detail'];
-                            }
-                        }
-                        $eventMessage = 'አባሉ መጽሐፍ ለመዋስ ብቁ አይደለም፦ ' . implode('፤ ', $reasons);
-                        break;
-                    }
-
-                    // 3. Atomically update copy status to 'borrowed'
-                    $upCopyStmt = mysqli_prepare($conn, "UPDATE book_copies SET status = 'borrowed' WHERE id = ? AND status = 'available'");
-                    mysqli_stmt_bind_param($upCopyStmt, 'i', $copyId);
-                    mysqli_stmt_execute($upCopyStmt);
-                    $affected = mysqli_stmt_affected_rows($upCopyStmt);
-                    mysqli_stmt_close($upCopyStmt);
-
-                    if ($affected !== 1) {
-                        mysqli_rollback($conn);
-                        $eventStatus = 'rejected';
-                        $eventMessage = 'መጽሐፉን ለመዋስ አልተቻለም (ቅጂው በሌላ ተጠቃሚ ተወስዷል)።';
-                        break;
-                    }
-
-                    // 4. Insert borrow record with verified parameter types (iiisis)
-                    $stmtBorrow = mysqli_prepare($conn, "INSERT INTO borrow_records (member_id, book_copy_id, book_id, borrowed_at, due_date, issued_by, offline_uuid)
-                                                         VALUES (?, ?, ?, ?, ?, ?, ?)
-                                                         ON DUPLICATE KEY UPDATE id = id");
-                    mysqli_stmt_bind_param($stmtBorrow, 'iiissis', $memberId, $copyId, $bookId, $eventDateStr, $dueDate, $userId, $uuid);
-                    $executed = mysqli_stmt_execute($stmtBorrow);
-                    mysqli_stmt_close($stmtBorrow);
-
-                    if (!$executed) {
-                        mysqli_rollback($conn);
-                        $eventStatus = 'failed';
-                        $eventMessage = 'የውሰት መዝገቡን ማስቀመጥ አልተቻለም: ' . mysqli_error($conn);
-                        break;
-                    }
-
-                    mysqli_commit($conn);
-                    $eventStatus = 'synced';
-                    $eventMessage = 'መጽሐፉ በተሳካ ሁኔታ ተዋሰ (የመመለሻ ቀን: ' . formatDate($dueDate) . ')';
                     break;
 
                 case 'RETURN':
                     $copyId   = (int)($payload['copy_id'] ?? 0);
                     $borrowId = (int)($payload['borrow_id'] ?? 0);
+                    $action   = clean($payload['action'] ?? 'returned');
 
                     if ($copyId <= 0 && $borrowId > 0) {
                         $bStmt = mysqli_prepare($conn, "SELECT book_copy_id FROM borrow_records WHERE id = ? LIMIT 1");
@@ -285,38 +220,14 @@ foreach ($data['events'] as $ev) {
                         break;
                     }
 
-                    mysqli_begin_transaction($conn);
-
-                    $retLock = mysqli_prepare($conn, "SELECT id, status FROM book_copies WHERE id = ? FOR UPDATE");
-                    mysqli_stmt_bind_param($retLock, 'i', $copyId);
-                    mysqli_stmt_execute($retLock);
-                    $cRow = mysqli_fetch_assoc(mysqli_stmt_get_result($retLock));
-                    mysqli_stmt_close($retLock);
-
-                    if (!$cRow) {
-                        mysqli_rollback($conn);
+                    $res = return_copy($conn, $copyId, $action, '', $userId);
+                    if ($res['success']) {
+                        $eventStatus = 'synced';
+                        $eventMessage = 'መጽሐፉ በተሳካ ሁኔታ ተመልሷል።';
+                    } else {
                         $eventStatus = 'rejected';
-                        $eventMessage = 'የተመላሽ ቅጂው አልተገኘም።';
-                        break;
+                        $eventMessage = $res['message'];
                     }
-
-                    // Update copy back to 'available'
-                    $upAvail = mysqli_prepare($conn, "UPDATE book_copies SET status = 'available' WHERE id = ?");
-                    mysqli_stmt_bind_param($upAvail, 'i', $copyId);
-                    mysqli_stmt_execute($upAvail);
-                    mysqli_stmt_close($upAvail);
-
-                    // Close active borrow record
-                    $recStmt = mysqli_prepare($conn, "UPDATE borrow_records 
-                                                      SET status = 'returned', returned_at = ?, returned_to = ? 
-                                                      WHERE book_copy_id = ? AND status = 'borrowed'");
-                    mysqli_stmt_bind_param($recStmt, 'sii', $eventDateStr, $userId, $copyId);
-                    mysqli_stmt_execute($recStmt);
-                    mysqli_stmt_close($recStmt);
-
-                    mysqli_commit($conn);
-                    $eventStatus = 'synced';
-                    $eventMessage = 'መጽሐፉ በተሳካ ሁኔታ ተመልሷል።';
                     break;
 
                 case 'PAYMENT':

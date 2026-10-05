@@ -274,9 +274,22 @@ function send_push_to_user($conn, $userId, $title, $body, $link = null) {
 
 // ---------------------------------------------------------------
 // CHURCH-STYLE BOOK CODE GENERATOR
-// Codes restart at 1 per category and append A/B/C for multiple copies.
+// Codes restart at 1 per category and append A/B/C...AA/AB for multiple copies.
 // ---------------------------------------------------------------
+function get_copy_code_suffix($index) {
+    $suffix = '';
+    while ($index >= 0) {
+        $suffix = chr(65 + ($index % 26)) . $suffix;
+        $index = intdiv($index, 26) - 1;
+    }
+    return $suffix;
+}
+
 function next_codes_for_category($conn, $categoryId, $quantity) {
+    $categoryId = (int)$categoryId;
+    // Lock category for update to prevent concurrent duplicate codes
+    @mysqli_query($conn, "SELECT id FROM categories WHERE id = $categoryId FOR UPDATE");
+
     $stmt = mysqli_prepare($conn, "SELECT bc.copy_code FROM book_copies bc
         JOIN books b ON b.id = bc.book_id WHERE b.category_id = ?");
     mysqli_stmt_bind_param($stmt, 'i', $categoryId);
@@ -297,7 +310,7 @@ function next_codes_for_category($conn, $categoryId, $quantity) {
         $codes[] = $nextPadded;
     } else {
         for ($i = 0; $i < $quantity; $i++) {
-            $codes[] = $nextPadded . chr(65 + $i); // A, B, C...
+            $codes[] = $nextPadded . get_copy_code_suffix($i);
         }
     }
     return $codes;
@@ -731,7 +744,11 @@ function verify_borrow_eligibility($conn, $memberId, $bookId, $copyId = null) {
     $bQuery = mysqli_query($conn, "SELECT * FROM books WHERE id = $bookId LIMIT 1");
     $book = mysqli_fetch_assoc($bQuery);
     $bookExists = ($book !== null);
-    $bookBorrowable = ($bookExists && is_book_borrowable($book) && $book['borrow_status'] !== 'restricted' && $book['borrow_status'] !== 'archived');
+    $isReference = ($book && ($book['borrow_status'] ?? '') === 'reference');
+    $bookBorrowable = ($bookExists && is_book_borrowable($book) 
+                       && ($book['borrow_status'] ?? '') !== 'restricted' 
+                       && ($book['borrow_status'] ?? '') !== 'archived'
+                       && !$isReference);
 
     // 4. Physical copy check
     $copyAvailable = false;
@@ -756,7 +773,7 @@ function verify_borrow_eligibility($conn, $memberId, $bookId, $copyId = null) {
     $borrowLimitOk = ($activeBorrows < $maxBorrows);
 
     // 6. Outstanding fines check
-    $maxFineAllowed = (float)get_setting($conn, 'max_allowed_unpaid_fine', 0.00);
+    $maxFineAllowed = (float)get_setting($conn, 'max_unpaid_fine', get_setting($conn, 'max_allowed_unpaid_fine', 0.00));
     $outstandingFine = (float)get_member_outstanding_fine($conn, $memberId);
     $fineOk = ($outstandingFine <= $maxFineAllowed);
 
@@ -785,7 +802,7 @@ function verify_borrow_eligibility($conn, $memberId, $bookId, $copyId = null) {
                 'title' => 'መጽሐፉ ለመዋስ ተፈቅዷል',
                 'detail' => $bookBorrowable 
                     ? 'ለመዋስ የተፈቀደ' 
-                    : ($book['non_borrowable_reason'] ?: 'ይህ መጽሐፍ ለመዋስ አይፈቀድም')
+                    : ($isReference ? 'የማጣቀሻ (Reference) መጽሐፍ በመሆኑ ከቤተ-መጻሕፍት ውጭ መዋስ አይፈቀድም' : ($book['non_borrowable_reason'] ?: 'ይህ መጽሐፍ ለመዋስ አይፈቀድም'))
             ],
             'availability' => [
                 'passed' => $copyAvailable,
@@ -800,7 +817,7 @@ function verify_borrow_eligibility($conn, $memberId, $bookId, $copyId = null) {
             'fines' => [
                 'passed' => $fineOk,
                 'title' => 'ያልተከፈለ ቅጣት',
-                'detail' => $fineOk ? "ምንም የሚጠበቅ ቅጣት የለም" : "ያልተከፈለ ቅጣት አለበት፦ " . number_format($outstandingFine, 2) . " ብር"
+                'detail' => $fineOk ? ($outstandingFine > 0 ? "ቅጣት አለ ($outstandingFine ብር) ግን ከተፈቀደው ($maxFineAllowed ብር) አይበልጥም" : 'ምንም ያልተከፈለ ቅጣት የለም') : "ያልተከፈለ ቅጣት አለ ($outstandingFine ብር)፤ መጀመሪያ መከፈል አለበት"
             ]
         ]
     ];
@@ -1030,18 +1047,16 @@ function calculate_overdue_fine($conn, $recordRow) {
     if (empty($recordRow['due_date']) || $recordRow['status'] === 'returned') return 0.0;
     $dueDate    = new DateTime($recordRow['due_date']);
     $today      = new DateTime(date('Y-m-d'));
-    $graceDays  = (int)get_setting($conn, 'fine_grace_days', 0);
-    $overdueDays = max(0, (int)$today->diff($dueDate)->days - ($dueDate > $today ? 0 : 0));
-
     if ($today <= $dueDate) return 0.0; // not overdue yet
 
-    $overdueDays  = (int)$today->diff($dueDate)->days;
-    $overdueDays  = max(0, $overdueDays - $graceDays);
+    $graceDays    = (int)get_setting($conn, 'fine_grace_days', 0);
+    $diffDays     = (int)$today->diff($dueDate)->days;
+    $overdueDays  = max(0, $diffDays - $graceDays);
     $finePerDay   = (float)get_setting($conn, 'overdue_fine_per_day', 5);
     $grossFine    = $overdueDays * $finePerDay;
     $alreadyPaid  = (float)($recordRow['fine_paid']   ?? 0);
     $waived       = (float)($recordRow['fine_waived'] ?? 0);
-    $netFine      = max(0, $grossFine - $alreadyPaid - $waived);
+    $netFine      = max(0.0, $grossFine - $alreadyPaid - $waived);
     return round($netFine, 2);
 }
 
@@ -1066,15 +1081,18 @@ function recalculate_all_fines($conn) {
 }
 
 /**
- * Get total outstanding fine for a member (unpaid + unwaived).
+ * Get total outstanding fine for a member (unpaid + unwaived),
+ * including returned/lost/damaged records where fine remains unpaid.
  */
 function get_member_outstanding_fine($conn, $memberId) {
     $memberId = (int)$memberId;
     $row = mysqli_fetch_assoc(mysqli_query($conn,
-        "SELECT COALESCE(SUM(overdue_fine - fine_paid - fine_waived), 0) AS total
+        "SELECT COALESCE(SUM(GREATEST(0, overdue_fine - fine_paid - fine_waived)), 0) AS total
          FROM borrow_records
-         WHERE member_id = $memberId AND status = 'borrowed' AND overdue_fine > 0"));
-    return max(0, (float)($row['total'] ?? 0));
+         WHERE member_id = $memberId
+           AND status IN ('borrowed', 'returned', 'lost', 'damaged')
+           AND overdue_fine > 0"));
+    return max(0.0, (float)($row['total'] ?? 0));
 }
 
 /**
@@ -1103,5 +1121,29 @@ function record_fine_payment($conn, $recordId, $memberId, $amount, $waived = 0, 
          WHERE id = $recordId");
 
     audit($conn, $recordedBy, 'fine_payment_recorded', "record_id:$recordId amount:$amount waived:$waived");
+}
+
+/**
+ * Waive a fine with mandatory reason.
+ */
+function waive_fine($conn, $recordId, $amount, $waivedBy = null, $reason = '') {
+    $recordId = (int)$recordId;
+    $amount   = (float)$amount;
+    $reason   = trim($reason);
+
+    if ($reason === '') {
+        return ['success' => false, 'message' => 'የይቅርታ ምክንያት መጻፍ ግዴታ ነው።'];
+    }
+    if ($amount <= 0) {
+        return ['success' => false, 'message' => 'የይቅርታ መጠኑ ከ 0 ብር መብለጥ አለበት።'];
+    }
+    $rec = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM borrow_records WHERE id = $recordId"));
+    if (!$rec) {
+        return ['success' => false, 'message' => 'የውሰት መዝገቡ አልተገኘም።'];
+    }
+    $memberId = (int)$rec['member_id'];
+    record_fine_payment($conn, $recordId, $memberId, 0.00, $amount, $waivedBy, "ይቅርታ የተደረገበት ምክንያት፦ " . $reason);
+    audit($conn, $waivedBy, 'fine_waived', "record_id:$recordId amount:$amount reason:$reason");
+    return ['success' => true, 'message' => 'የቅጣት ይቅርታው ተመዝግቧል።'];
 }
 

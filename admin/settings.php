@@ -26,6 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Fines
         'overdue_fine_per_day'      => max(0, (float)($_POST['overdue_fine_per_day']    ?? 5)),
         'fine_grace_days'           => max(0, (int)($_POST['fine_grace_days']           ?? 0)),
+        'max_unpaid_fine'           => max(0, (float)($_POST['max_unpaid_fine']          ?? 0)),
     ];
 
     foreach ($settingsToUpdate as $k => $val) {
@@ -142,6 +143,13 @@ include __DIR__ . '/../includes/header.php';
           <label>ነፃ ቀናት (Grace Days)</label>
           <input class="input" type="number" min="0" name="fine_grace_days" value="<?= e($settings['fine_grace_days'] ?? '0') ?>">
           <div class="hint">ቅጣት ከቀኑ ስንት ቀን በኋላ ይጀምር</div>
+        </div>
+      </div>
+      <div class="col-12 mt-2">
+        <div class="field">
+          <label>ከፍተኛ ያልተከፈለ ቅጣት ገደብ (ብር)</label>
+          <input class="input" type="number" step="0.5" min="0" name="max_unpaid_fine" value="<?= e($settings['max_unpaid_fine'] ?? '0') ?>">
+          <div class="hint">ያልተከፈለ ቅጣት ከዚህ መጠን በላይ ሲሆን መጽሐፍ መዋስ ይታገዳል (0 ማለት ማንኛውም ያልተከፈለ ቅጣት ወዲያውኑ ያግዳል)።</div>
         </div>
       </div>
     </div>
