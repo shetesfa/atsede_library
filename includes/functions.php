@@ -205,6 +205,74 @@ function set_setting($conn, $key, $value) {
     return $ok;
 }
 
+/**
+ * Secure image upload processor: validates MIME, checks getimagesize,
+ * enforces size limit, re-encodes via GD to strip payloads, forces safe extension (.jpg).
+ */
+function secure_process_image($tmpFilePath, $targetDir, $prefix = 'img', $maxBytes = 5242880) {
+    if (!file_exists($tmpFilePath)) {
+        return ['success' => false, 'error' => 'የፋይል መገኛ አልተገኘም።'];
+    }
+
+    if (filesize($tmpFilePath) > $maxBytes) {
+        return ['success' => false, 'error' => 'የምስሉ መጠን ከ 5MB መብለጥ የለበትም።'];
+    }
+
+    $imageInfo = @getimagesize($tmpFilePath);
+    if ($imageInfo === false) {
+        return ['success' => false, 'error' => 'ትክክለኛ የምስል ፋይል አይደለም።'];
+    }
+
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mime = finfo_file($finfo, $tmpFilePath);
+    finfo_close($finfo);
+
+    $allowedMimes = [
+        'image/jpeg' => 'jpg',
+        'image/png'  => 'jpg', // re-encoded to jpg
+        'image/webp' => 'jpg', // re-encoded to jpg
+    ];
+
+    if (!isset($allowedMimes[$mime])) {
+        return ['success' => false, 'error' => 'የተፈቀዱ የምስል አይነቶች JPG, PNG ወይም WEBP ብቻ ናቸው።'];
+    }
+
+    $imgContent = file_get_contents($tmpFilePath);
+    $gdImg = @imagecreatefromstring($imgContent);
+    if (!$gdImg) {
+        return ['success' => false, 'error' => 'ምስሉን ማቀናበር አልተቻለም (Corrupted image)።'];
+    }
+
+    if (!is_dir($targetDir)) {
+        @mkdir($targetDir, 0755, true);
+    }
+
+    $randomName = $prefix . '_' . bin2hex(random_bytes(10)) . '.jpg';
+    $targetPath = rtrim($targetDir, '/\\') . DIRECTORY_SEPARATOR . $randomName;
+
+    // Convert PNG transparency / palette if needed and save as JPEG to sanitize
+    $width = imagesx($gdImg);
+    $height = imagesy($gdImg);
+    $trueColorImg = imagecreatetruecolor($width, $height);
+    $white = imagecolorallocate($trueColorImg, 255, 255, 255);
+    imagefilledrectangle($trueColorImg, 0, 0, $width, $height, $white);
+    imagecopy($trueColorImg, $gdImg, 0, 0, 0, 0, $width, $height);
+
+    $saved = imagejpeg($trueColorImg, $targetPath, 85);
+    imagedestroy($gdImg);
+    imagedestroy($trueColorImg);
+
+    if (!$saved || !file_exists($targetPath)) {
+        return ['success' => false, 'error' => 'ምስሉን ወደ ሰርቨር ማስቀመጥ አልተቻለም።'];
+    }
+
+    return [
+        'success'   => true,
+        'file_name' => $randomName,
+        'full_path' => $targetPath,
+    ];
+}
+
 // ---------------------------------------------------------------
 // BORROW STATUS BADGE HELPERS
 // ---------------------------------------------------------------

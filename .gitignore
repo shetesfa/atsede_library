@@ -18,9 +18,11 @@ backups/
 tmp/
 
 # Uploads
-uploads/avatars/
+uploads/avatars/*
+!uploads/avatars/.htaccess
 uploads/covers/*
 !uploads/covers/.gitkeep
+!uploads/covers/.htaccess
 
 # Credentials and secrets
 config.local.php

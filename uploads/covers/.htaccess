@@ -1,0 +1,17 @@
+# Deny script execution in covers directory
+<FilesMatch "(?i)\.(php|php[0-9]|phtml|phar|cgi|pl|py|sh|bash)$">
+    Order Deny,Allow
+    Deny from all
+</FilesMatch>
+
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php8.c>
+    php_flag engine off
+</IfModule>
+
+Options -ExecCGI -Indexes

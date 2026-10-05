@@ -29,15 +29,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_book'])) {
     $shelfId = (int)($_POST['shelf_id'] ?? 0) ?: null;
     $position = clean($_POST['position'] ?? '') ?: null;
     $borrowStatus = in_array($_POST['borrow_status'] ?? '', ['available','restricted','reference','archived']) ? $_POST['borrow_status'] : 'available';
+    $isBorrowable = isset($_POST['is_borrowable']) ? (int)$_POST['is_borrowable'] : 1;
+    $nonBorrowableReason = clean($_POST['non_borrowable_reason'] ?? '') ?: null;
     $confirmDuplicate = !empty($_POST['confirm_duplicate']);
 
     $coverName = null;
-    if (!empty($_FILES['cover_image']['name'])) {
-        @mkdir(UPLOAD_DIR, 0755, true);
-        $ext = strtolower(pathinfo($_FILES['cover_image']['name'], PATHINFO_EXTENSION));
-        if (in_array($ext, ['jpg','jpeg','png','webp'])) {
-            $coverName = 'cover_' . time() . '_' . random_int(1000,9999) . '.' . $ext;
-            move_uploaded_file($_FILES['cover_image']['tmp_name'], UPLOAD_DIR . $coverName);
+    if (!empty($_FILES['cover_image']['tmp_name']) && ($_FILES['cover_image']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+        $uploadResult = secure_process_image($_FILES['cover_image']['tmp_name'], UPLOAD_DIR, 'cover_' . time());
+        if ($uploadResult['success']) {
+            $coverName = $uploadResult['file_name'];
+        } else {
+            flash('msg', $uploadResult['error'], 'danger');
+            redirect('books.php');
         }
     }
 
@@ -59,6 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_book'])) {
                 'title'=>$title,'author'=>$author,'category_id'=>$categoryId,'quantity'=>$quantity,
                 'year'=>$year,'publisher'=>$publisher,'description'=>$description,'price'=>$price,
                 'room_id'=>$roomId,'shelf_id'=>$shelfId,'position'=>$position,'borrow_status'=>$borrowStatus,
+                'is_borrowable'=>$isBorrowable,'non_borrowable_reason'=>$nonBorrowableReason,
                 'cover_name'=>$coverName,
             ];
             $_SESSION['pending_duplicate_id'] = $duplicateMatch['id'];
@@ -68,28 +72,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_book'])) {
 
     if (!$duplicateMatch) {
         if ($bookId > 0) {
-            $sql = "UPDATE books SET title=?, author=?, category_id=?, quantity=?, publication_year=?, publisher=?, description=?, price=?, room_id=?, shelf_id=?, position=?, borrow_status=?" . ($coverName ? ", cover_image=?" : "") . " WHERE id=?";
+            $sql = "UPDATE books SET title=?, author=?, category_id=?, quantity=?, publication_year=?, publisher=?, description=?, price=?, room_id=?, shelf_id=?, position=?, borrow_status=?, is_borrowable=?, non_borrowable_reason=?" . ($coverName ? ", cover_image=?" : "") . " WHERE id=?";
             $stmt = mysqli_prepare($conn, $sql);
             if ($coverName) {
-                mysqli_stmt_bind_param($stmt, 'ssiisssdiisssi', $title, $author, $categoryId, $quantity, $year, $publisher, $description, $price, $roomId, $shelfId, $position, $borrowStatus, $coverName, $bookId);
+                mysqli_stmt_bind_param($stmt, 'ssiisssdiississi', $title, $author, $categoryId, $quantity, $year, $publisher, $description, $price, $roomId, $shelfId, $position, $borrowStatus, $isBorrowable, $nonBorrowableReason, $coverName, $bookId);
             } else {
-                mysqli_stmt_bind_param($stmt, 'ssiisssdiissi', $title, $author, $categoryId, $quantity, $year, $publisher, $description, $price, $roomId, $shelfId, $position, $borrowStatus, $bookId);
+                mysqli_stmt_bind_param($stmt, 'ssiisssdiissisi', $title, $author, $categoryId, $quantity, $year, $publisher, $description, $price, $roomId, $shelfId, $position, $borrowStatus, $isBorrowable, $nonBorrowableReason, $bookId);
             }
             mysqli_stmt_execute($stmt);
-            audit($conn, $user['id'], 'book_updated', "book_id:$bookId");
+            audit($conn, $user['id'], 'book_updated', "book_id:$bookId is_borrowable:$isBorrowable");
             flash('msg', 'መጽሐፉ ዘምኗል።', 'success');
         } else {
-            $stmt = mysqli_prepare($conn, "INSERT INTO books (title, author, category_id, quantity, publication_year, publisher, description, price, cover_image, room_id, shelf_id, position, borrow_status, created_by)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+            $stmt = mysqli_prepare($conn, "INSERT INTO books (title, author, category_id, quantity, publication_year, publisher, description, price, cover_image, room_id, shelf_id, position, borrow_status, is_borrowable, non_borrowable_reason, created_by)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
             $createdBy = (int)$user['id'];
-            mysqli_stmt_bind_param($stmt, 'ssiisssdsiissi', $title, $author, $categoryId, $quantity, $year, $publisher, $description, $price, $coverName, $roomId, $shelfId, $position, $borrowStatus, $createdBy);
+            mysqli_stmt_bind_param($stmt, 'ssiisssdsiissisi', $title, $author, $categoryId, $quantity, $year, $publisher, $description, $price, $coverName, $roomId, $shelfId, $position, $borrowStatus, $isBorrowable, $nonBorrowableReason, $createdBy);
             mysqli_stmt_execute($stmt);
             $bookId = mysqli_insert_id($conn);
 
             $codes = next_codes_for_category($conn, $categoryId, $quantity);
             foreach ($codes as $code) {
-                $stmt2 = mysqli_prepare($conn, "INSERT INTO book_copies (book_id, copy_code) VALUES (?,?)");
-                mysqli_stmt_bind_param($stmt2, 'is', $bookId, $code);
+                $qrId = 'ATS-COPY-' . strtoupper(substr(md5($bookId . '_' . $code . '_' . microtime()), 0, 10));
+                $stmt2 = mysqli_prepare($conn, "INSERT INTO book_copies (book_id, copy_code, qr_identifier) VALUES (?,?,?)");
+                mysqli_stmt_bind_param($stmt2, 'iss', $bookId, $code, $qrId);
                 mysqli_stmt_execute($stmt2);
             }
             notify_broadcast($conn, 'አዲስ መጽሐፍ ታክሏል', "\"$title\" በ$author ወደ ቤተ መጻሕፍት ገብቷል።", 'new_book', 'book.php?id=' . $bookId);
@@ -112,8 +117,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_to_existing'])) {
             $addQty = (int)$pending['quantity'];
             $codes = next_codes_for_category($conn, $existing['category_id'], $addQty);
             foreach ($codes as $code) {
-                $stmt2 = mysqli_prepare($conn, "INSERT INTO book_copies (book_id, copy_code) VALUES (?,?)");
-                mysqli_stmt_bind_param($stmt2, 'is', $existingId, $code);
+                $qrId = 'ATS-COPY-' . strtoupper(substr(md5($existingId . '_' . $code . '_' . microtime()), 0, 10));
+                $stmt2 = mysqli_prepare($conn, "INSERT INTO book_copies (book_id, copy_code, qr_identifier) VALUES (?,?,?)");
+                mysqli_stmt_bind_param($stmt2, 'iss', $existingId, $code, $qrId);
                 mysqli_stmt_execute($stmt2);
             }
             mysqli_query($conn, "UPDATE books SET quantity = quantity + $addQty WHERE id=$existingId");
@@ -130,16 +136,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['force_create_new'])) 
     csrf_verify();
     $p = $_SESSION['pending_book'] ?? null;
     if ($p) {
-        $stmt = mysqli_prepare($conn, "INSERT INTO books (title, author, category_id, quantity, publication_year, publisher, description, price, cover_image, room_id, shelf_id, position, borrow_status, created_by)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+        $stmt = mysqli_prepare($conn, "INSERT INTO books (title, author, category_id, quantity, publication_year, publisher, description, price, cover_image, room_id, shelf_id, position, borrow_status, is_borrowable, non_borrowable_reason, created_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
         $createdBy = (int)$user['id'];
-        mysqli_stmt_bind_param($stmt, 'ssiisssdsiissi', $p['title'], $p['author'], $p['category_id'], $p['quantity'], $p['year'], $p['publisher'], $p['description'], $p['price'], $p['cover_name'], $p['room_id'], $p['shelf_id'], $p['position'], $p['borrow_status'], $createdBy);
+        $pBorrowable = $p['is_borrowable'] ?? 1;
+        $pReason = $p['non_borrowable_reason'] ?? null;
+        mysqli_stmt_bind_param($stmt, 'ssiisssdsiissisi', $p['title'], $p['author'], $p['category_id'], $p['quantity'], $p['year'], $p['publisher'], $p['description'], $p['price'], $p['cover_name'], $p['room_id'], $p['shelf_id'], $p['position'], $p['borrow_status'], $pBorrowable, $pReason, $createdBy);
         mysqli_stmt_execute($stmt);
         $newBookId = mysqli_insert_id($conn);
         $codes = next_codes_for_category($conn, $p['category_id'], $p['quantity']);
         foreach ($codes as $code) {
-            $stmt2 = mysqli_prepare($conn, "INSERT INTO book_copies (book_id, copy_code) VALUES (?,?)");
-            mysqli_stmt_bind_param($stmt2, 'is', $newBookId, $code);
+            $qrId = 'ATS-COPY-' . strtoupper(substr(md5($newBookId . '_' . $code . '_' . microtime()), 0, 10));
+            $stmt2 = mysqli_prepare($conn, "INSERT INTO book_copies (book_id, copy_code, qr_identifier) VALUES (?,?,?)");
+            mysqli_stmt_bind_param($stmt2, 'iss', $newBookId, $code, $qrId);
             mysqli_stmt_execute($stmt2);
         }
         notify_broadcast($conn, 'አዲስ መጽሐፍ ታክሏል', "\"{$p['title']}\" በ{$p['author']} ወደ ቤተ መጻሕፍት ገብቷል።", 'new_book', 'book.php?id=' . $newBookId);
@@ -235,6 +244,7 @@ include __DIR__ . '/../includes/header.php';
 
 <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
   <form method="get" style="flex:1;min-width:200px;"><div class="input-group"><i class="bi bi-search"></i><input class="input" name="q" value="<?= e($q) ?>" placeholder="መጻሕፍትን ይፈልጉ…"><?php if ($categoryFilter): ?><input type="hidden" name="category" value="<?= $categoryFilter ?>"><?php endif; ?></div></form>
+  <a href="print_qr.php" class="btn btn-outline" style="color:var(--navy);border-color:var(--navy);font-weight:600;"><i class="bi bi-printer"></i> የQR ኮዶች ማተሚያ</a>
   <button class="btn btn-gold" onclick="openSheet('book-sheet')"><i class="bi bi-plus-lg"></i> <?= __('add') ?></button>
 </div>
 
@@ -355,19 +365,36 @@ include __DIR__ . '/../includes/header.php';
             <select class="input" name="shelf_id" id="shelf_id">
               <option value="0">—</option>
               <?php if ($editShelves): $si = 0; mysqli_data_seek($editShelves, 0); while ($s = mysqli_fetch_assoc($editShelves)): ?>
-                <option value="<?= (int)$s['id'] ?>" <?= (($editBook['shelf_id'] ?? 0) == $s['id']) ? 'selected' : '' ?>><?= e(shelf_display_name($si)) ?></option>
+                <option value="<?= (int)$s['id'] ?>" <?= (($editBook['shelf_id'] ?? 0) == $s['id']) ? 'selected' : '' ?>><?= e($s['name'] ?: shelf_display_name($si)) ?></option>
               <?php $si++; endwhile; endif; ?>
             </select>
           </div>
         </div>
         <div class="col-12"><div class="field"><label><?= __('position') ?></label><input class="input" name="position" placeholder="ለምሳሌ፦ የላይ መደርደሪያ፣ ግራ" value="<?= e($editBook['position'] ?? '') ?>"></div></div>
-        <div class="col-12">
-          <div class="field"><label><?= __('borrow_status') ?></label>
-            <select class="input" name="borrow_status">
-              <?php foreach ($borrowStatusLabels as $val=>$lbl): ?>
-                <option value="<?= $val ?>" <?= ($editBook['borrow_status'] ?? 'available') === $val ? 'selected' : '' ?>><?= e($lbl) ?></option>
-              <?php endforeach; ?>
-            </select>
+        <div class="row g-2">
+          <div class="col-6">
+            <div class="field"><label><?= __('borrow_status') ?></label>
+              <select class="input" name="borrow_status">
+                <?php foreach ($borrowStatusLabels as $val=>$lbl): ?>
+                  <option value="<?= $val ?>" <?= ($editBook['borrow_status'] ?? 'available') === $val ? 'selected' : '' ?>><?= e($lbl) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="field">
+              <label>ለመዋስ ይፈቀዳል?</label>
+              <select class="input" name="is_borrowable" id="book_is_borrowable" onchange="document.getElementById('reason-box').style.display = (this.value == '0' ? 'block' : 'none');">
+                <option value="1" <?= ($editBook['is_borrowable'] ?? 1) == 1 ? 'selected' : '' ?>>✓ አዎ (ይፈቀዳል)</option>
+                <option value="0" <?= isset($editBook['is_borrowable']) && $editBook['is_borrowable'] == 0 ? 'selected' : '' ?>>✗ አይ (አይፈቀድም)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="col-12" id="reason-box" style="display:<?= isset($editBook['is_borrowable']) && $editBook['is_borrowable'] == 0 ? 'block' : 'none' ?>;">
+          <div class="field">
+            <label><?= __('borrow_reason') ?></label>
+            <input class="input" name="non_borrowable_reason" value="<?= e($editBook['non_borrowable_reason'] ?? '') ?>" placeholder="ምሳሌ፦ ብርቅዬ እና አሮጌ መጽሐፍ ስለሆነ ከላይብረሪ ውጭ አይወጣም።">
           </div>
         </div>
         <div class="col-12"><div class="field"><label><?= __('cover_image') ?></label><input class="input" type="file" name="cover_image" accept="image/*"></div></div>
@@ -378,7 +405,10 @@ include __DIR__ . '/../includes/header.php';
         <button class="btn btn-gold btn-block" name="save_book" value="1"><?= $editBook ? __('save_changes') : 'መጽሐፍ ጨምር' ?></button>
       </div>
       <?php if ($editBook): ?>
-      <button type="button" class="btn btn-outline btn-block mt-2" style="color:var(--danger);border-color:var(--danger);" onclick="openDeleteBook(<?= (int)$editBook['id'] ?>, '<?= e(addslashes($editBook['title'])) ?>')"><i class="bi bi-trash"></i> መጽሐፍ ሰርዝ</button>
+        <div class="d-flex gap-2 mt-2">
+          <a href="print_qr.php?book_id=<?= (int)$editBook['id'] ?>" class="btn btn-outline btn-block btn-sm" style="color:var(--navy);border-color:var(--navy);"><i class="bi bi-qr-code"></i> QR ኮዶች አትም</a>
+          <button type="button" class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);" onclick="openDeleteBook(<?= (int)$editBook['id'] ?>, '<?= e(addslashes($editBook['title'])) ?>')"><i class="bi bi-trash"></i> ሰርዝ</button>
+        </div>
       <?php endif; ?>
     </form>
   </div>
@@ -411,22 +441,34 @@ include __DIR__ . '/../includes/header.php';
 <div class="sheet-overlay <?= $copiesBookId ? 'show' : '' ?>" id="copies-sheet">
   <div class="sheet">
     <div class="sheet-handle"></div>
-    <div class="sheet-title">ቅጂዎች — <?= e($copiesBook['title'] ?? '') ?></div>
-    <?php if ($copiesList): mysqli_data_seek($copiesList, 0); while ($c = mysqli_fetch_assoc($copiesList)): ?>
-      <form method="post" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="sheet-title" style="margin:0;">ቅጂዎች — <?= e($copiesBook['title'] ?? '') ?></div>
+      <?php if ($copiesBookId): ?>
+        <a href="print_qr.php?q=<?= urlencode($copiesBook['title'] ?? '') ?>" class="btn btn-navy btn-sm">
+          <i class="bi bi-printer"></i> የQR ስቲከሮች አትም
+        </a>
+      <?php endif; ?>
+    </div>
+    <?php if ($copiesList): mysqli_data_seek($copiesList, 0); while ($c = mysqli_fetch_assoc($copiesList)): 
+      $copyQrUrl = (defined('BASE_URL') ? rtrim(BASE_URL, '/') . '/' : '/') . 'qr.php?code=' . urlencode($c['qr_identifier']);
+    ?>
+      <form method="post" style="display:flex;gap:6px;align-items:center;margin-bottom:8px;background:#f8fafc;padding:6px;border-radius:8px;border:1px solid var(--line);">
         <?= csrf_field() ?>
         <input type="hidden" name="copy_id" value="<?= (int)$c['id'] ?>">
         <input type="hidden" name="book_id_ref" value="<?= $copiesBookId ?>">
-        <input class="input mono" name="copy_code" value="<?= e($c['copy_code']) ?>" style="width:90px;flex:0 0 90px;">
-        <select class="input" name="copy_status" style="flex:1;">
+        <input class="input mono" name="copy_code" value="<?= e($c['copy_code']) ?>" style="width:75px;flex:0 0 75px;padding:4px 6px;font-size:.82rem;">
+        <select class="input" name="copy_status" style="flex:1;padding:4px 6px;font-size:.82rem;">
           <?php foreach ($copyStatusLabels as $sKey => $sLbl): ?>
             <option value="<?= $sKey ?>" <?= $c['status']===$sKey?'selected':'' ?>><?= e($sLbl) ?></option>
           <?php endforeach; ?>
         </select>
-        <button class="btn btn-navy btn-sm" name="update_copy" value="1"><i class="bi bi-save"></i></button>
+        <button class="btn btn-navy btn-sm" name="update_copy" value="1" title="አስቀምጥ" style="padding:4px 8px;"><i class="bi bi-save"></i></button>
+        <a href="<?= e($copyQrUrl) ?>" target="_blank" class="btn btn-outline btn-sm" title="QR ይመልከቱ" style="padding:4px 8px;">
+          <i class="bi bi-qr-code"></i>
+        </a>
       </form>
     <?php endwhile; endif; ?>
-    <button class="btn btn-outline btn-block" type="button" onclick="closeSheet('copies-sheet')"><?= __('close') ?></button>
+    <button class="btn btn-outline btn-block mt-2" type="button" onclick="closeSheet('copies-sheet')"><?= __('close') ?></button>
   </div>
 </div>
 
@@ -441,9 +483,10 @@ function openBookDetail(b) {
     '<div style="margin-bottom:8px;"><span class="text-muted">ቅጂዎች፦</span> ' + b.available_count + '/' + b.copy_count + ' ነፃ</div>' +
     '<div style="margin-bottom:8px;"><span class="text-muted">ሁኔታ፦</span> <span class="badge ' + b.borrow_status_class + '">' + b.borrow_status + '</span></div>' +
     '<div style="margin-bottom:8px;"><span class="text-muted">ዓ.ም፦</span> ' + b.publication_year + '</div>' +
-    '<div style="margin-bottom:8px;"><span class="text-muted">አሳራ፦</span> ' + b.publisher + '</div>' +
+    '<div style="margin-bottom:8px;"><span class="text-muted">አሳታሚ፦</span> ' + b.publisher + '</div>' +
     '<div style="margin-bottom:8px;"><span class="text-muted">ዋጋ፦</span> ' + b.price + '</div>' +
     '<div style="margin-bottom:8px;"><span class="text-muted">ተመዝግቦ፦</span> ' + b.created_at + '</div>' +
+    '<div style="margin-top:12px;margin-bottom:8px;"><a href="print_qr.php?q=' + encodeURIComponent(b.title) + '" class="btn btn-navy btn-block btn-sm"><i class="bi bi-printer"></i> የዚህን መጽሐፍ የQR ስቲከሮች አትም / አሳይ</a></div>' +
     (b.description !== '—' ? '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line);"><span class="text-muted">መግለጫ፦</span><br>' + b.description + '</div>' : '');
   document.getElementById('bd-edit-btn').href = '?edit=' + b.id + '<?= $categoryFilter ? '&category='.$categoryFilter : '' ?>';
   const delBtn = document.getElementById('bd-delete-btn');
