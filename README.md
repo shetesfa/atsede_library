@@ -28,9 +28,10 @@
    git clone https://github.com/shetesfa/atsede_library.git
    ```
 2. **Setup Database**:
-   - Import `database.sql` into your MySQL instance (e.g., via phpMyAdmin).
-3. **Configure Application**:
-   - Update settings and credentials in `config.php`.
+   - Create a local configuration file by copying `config.local.php.example` to `config.local.php` and filling your database credentials.
+   - Run installation via browser or import the database schema from `database/`.
+3. **Lock & Secure Installation Scripts**:
+   > ⚠️ **SECURITY CRITICAL**: Immediately after installation, **DELETE** or lock `setup.php` and `setup_webhook.php` from the web root. An installation lock file `database/.installed` is created automatically, but removing these scripts from production web root is strongly recommended.
 4. **Launch**:
    - Open in your browser: `http://localhost/atsede_library/`
 

@@ -5,6 +5,9 @@ require_once __DIR__ . '/../vendor/autoload.php';
 putenv('DB_NAME=atsede_test');
 $_ENV['DB_NAME'] = 'atsede_test';
 $_SERVER['APP_ENV'] = 'testing';
+if (!defined('PHPUNIT_RUNNING')) {
+    define('PHPUNIT_RUNNING', true);
+}
 
 // Mock session if running in CLI
 if (session_status() === PHP_SESSION_NONE) {

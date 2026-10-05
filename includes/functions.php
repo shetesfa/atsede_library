@@ -37,28 +37,14 @@ function require_role($roles) {
 
 // Works out how many "../" are needed to reach the project root from the current script
 function rel_base() {
-    // Use BASE_URL if defined (from config.php), otherwise auto-detect
-    if (defined('BASE_URL')) {
-        // If BASE_URL is '/', we're at root level
-        if (BASE_URL === '/') {
-            $depth = 0;
-        } else {
-            // Calculate depth from BASE_URL
-            $path = trim(BASE_URL, '/');
-            $depth = $path === '' ? 0 : count(explode('/', $path));
-        }
+    $scriptFile = realpath($_SERVER['SCRIPT_FILENAME'] ?? '');
+    $rootDir = realpath(__DIR__ . '/..');
+    if ($scriptFile && $rootDir && strpos($scriptFile, $rootDir) === 0) {
+        $relPath = trim(substr(dirname($scriptFile), strlen($rootDir)), DIRECTORY_SEPARATOR);
+        $depth = ($relPath === '') ? 0 : count(explode(DIRECTORY_SEPARATOR, $relPath));
         return $depth === 0 ? './' : str_repeat('../', $depth);
     }
-    
-    // Fallback to original logic
-    $depth = 0;
-    $dir = dirname($_SERVER['SCRIPT_NAME']);
-    $root = '/atsede_library';
-    if (strpos($dir, $root) === 0) {
-        $sub = trim(substr($dir, strlen($root)), '/');
-        $depth = $sub === '' ? 0 : count(explode('/', $sub));
-    }
-    return $depth === 0 ? './' : str_repeat('../', $depth);
+    return './';
 }
 
 function redirect($url) {
@@ -200,10 +186,23 @@ function audit($conn, $userId, $action, $details = '') {
 // SETTINGS
 // ---------------------------------------------------------------
 function get_setting($conn, $key, $default = null) {
-    $key = mysqli_real_escape_string($conn, $key);
-    $res = mysqli_query($conn, "SELECT setting_value FROM settings WHERE setting_key = '$key' LIMIT 1");
+    $stmt = mysqli_prepare($conn, "SELECT setting_value FROM settings WHERE setting_key = ? LIMIT 1");
+    if (!$stmt) return $default;
+    mysqli_stmt_bind_param($stmt, 's', $key);
+    mysqli_stmt_execute($stmt);
+    $res = mysqli_stmt_get_result($stmt);
     $row = mysqli_fetch_assoc($res);
+    mysqli_stmt_close($stmt);
     return $row ? $row['setting_value'] : $default;
+}
+
+function set_setting($conn, $key, $value) {
+    $stmt = mysqli_prepare($conn, "INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?");
+    if (!$stmt) return false;
+    mysqli_stmt_bind_param($stmt, 'sss', $key, $value, $value);
+    $ok = mysqli_stmt_execute($stmt);
+    mysqli_stmt_close($stmt);
+    return $ok;
 }
 
 // ---------------------------------------------------------------
@@ -330,3 +329,475 @@ function next_shelf_name($conn, $roomId) {
 function shelf_display_name($index) {
     return 'መደርደሪያ ' . ((int)$index + 1);
 }
+
+// ---------------------------------------------------------------
+// MEMBERSHIP PAYMENT HELPERS
+// Minimum payment = 50 ETB by default, configurable by Admin.
+// Rules:
+// - Paid amount >= minimum: PAID (ተከፍሏል)
+// - Paid amount < minimum: NOT PAID (አልተከፈለም)
+// - No debt, no negative balances.
+// ---------------------------------------------------------------
+function get_minimum_monthly_payment($conn) {
+    return (float)get_setting($conn, 'minimum_monthly_payment', 50.0);
+}
+
+function current_billing_month() {
+    $eth = gregorianToEthParts(date('Y-m-d'));
+    if (!$eth) return date('Y-m');
+    return sprintf('%04d-%02d', $eth['year'], $eth['month']);
+}
+
+function format_billing_month_amharic($ym) {
+    if (empty($ym)) return '—';
+    $parts = explode('-', $ym);
+    if (count($parts) < 2) return $ym;
+    $y = (int)$parts[0];
+    $m = (int)$parts[1];
+
+    // If year is Gregorian (> 2020), convert to Ethiopian
+    if ($y > 2025) {
+        $eth = gregorianToEthParts("$ym-01");
+        if ($eth) {
+            return get_ethiopian_month_name($eth['month']) . ' ' . $eth['year'] . ' ዓ.ም.';
+        }
+    }
+
+    return get_ethiopian_month_name($m) . ' ' . $y . ' ዓ.ም.';
+}
+
+function get_member_payment_status($conn, $memberId, $billingMonth = null) {
+    $memberId = (int)$memberId;
+    if ($billingMonth === null) {
+        $billingMonth = current_billing_month();
+    }
+    $minRequired = get_minimum_monthly_payment($conn);
+
+    $stmt = mysqli_prepare($conn, "SELECT COALESCE(SUM(amount), 0) AS total_paid FROM membership_payments WHERE member_id = ? AND payment_month = ?");
+    mysqli_stmt_bind_param($stmt, 'is', $memberId, $billingMonth);
+    mysqli_stmt_execute($stmt);
+    $res = mysqli_stmt_get_result($stmt);
+    $row = mysqli_fetch_assoc($res);
+    $paidAmount = (float)($row['total_paid'] ?? 0);
+
+    $isPaid = ($paidAmount >= $minRequired);
+    return [
+        'month' => $billingMonth,
+        'month_label' => format_billing_month_amharic($billingMonth),
+        'amount_paid' => $paidAmount,
+        'minimum_required' => $minRequired,
+        'is_paid' => $isPaid,
+        'status' => $isPaid ? 'PAID' : 'NOT_PAID',
+        'status_text' => $isPaid ? 'ተከፍሏል' : 'አልተከፈለም',
+        'badge_class' => $isPaid ? 'badge-success' : 'badge-danger'
+    ];
+}
+
+function get_member_payment_history($conn, $memberId, $monthsCount = 12) {
+    $memberId = (int)$memberId;
+    $minRequired = get_minimum_monthly_payment($conn);
+
+    // Only show months since member registration, up to current month
+    $memRow = mysqli_fetch_assoc(mysqli_query($conn, "SELECT created_at FROM members WHERE id=$memberId LIMIT 1"));
+    $regDate = $memRow['created_at'] ?? date('Y-m-d');
+    $regEth  = gregorianToEthParts($regDate) ?? ['year' => 2019, 'month' => 1];
+    $curEth  = gregorianToEthParts(date('Y-m-d')) ?? ['year' => 2019, 'month' => 1];
+
+    $history = [];
+
+    // Build Ethiopian months from registration month up to current month
+    $startYear  = $regEth['year'];
+    $startMonth = $regEth['month'];
+    $endYear    = $curEth['year'];
+    $endMonth   = $curEth['month'];
+
+    for ($y = $endYear; $y >= $startYear; $y--) {
+        $mLimit = ($y === $endYear) ? $endMonth : 12;
+        $mFloor = ($y === $startYear) ? $startMonth : 1;
+        for ($m = $mLimit; $m >= $mFloor; $m--) {
+            $ym = sprintf('%04d-%02d', $y, $m);
+            $history[$ym] = [
+                'month' => $ym,
+                'month_label' => format_billing_month_amharic($ym),
+                'amount_paid' => 0.0,
+                'minimum_required' => $minRequired,
+                'is_paid' => false,
+                'status_text' => 'አልተከፈለም',
+                'records' => []
+            ];
+        }
+    }
+
+    // Always ensure current month exists
+    $curYm = current_billing_month();
+    if (!isset($history[$curYm])) {
+        $history[$curYm] = [
+            'month' => $curYm,
+            'month_label' => format_billing_month_amharic($curYm),
+            'amount_paid' => 0.0,
+            'minimum_required' => $minRequired,
+            'is_paid' => false,
+            'status_text' => 'አልተከፈለም',
+            'records' => []
+        ];
+    }
+
+    $stmt = mysqli_prepare($conn, "SELECT * FROM membership_payments WHERE member_id = ? ORDER BY paid_at DESC");
+    mysqli_stmt_bind_param($stmt, 'i', $memberId);
+    mysqli_stmt_execute($stmt);
+    $res = mysqli_stmt_get_result($stmt);
+    while ($row = mysqli_fetch_assoc($res)) {
+        $ym = $row['payment_month'];
+        if (!isset($history[$ym])) {
+            $history[$ym] = [
+                'month' => $ym,
+                'month_label' => format_billing_month_amharic($ym),
+                'amount_paid' => 0.0,
+                'minimum_required' => $minRequired,
+                'is_paid' => false,
+                'status_text' => 'አልተከፈለም',
+                'records' => []
+            ];
+        }
+        $history[$ym]['amount_paid'] += (float)$row['amount'];
+        $history[$ym]['records'][] = $row;
+    }
+
+    foreach ($history as $ym => &$item) {
+        $item['is_paid'] = ($item['amount_paid'] >= $item['minimum_required']);
+        $item['status_text'] = $item['is_paid'] ? 'ተከፍሏል' : 'አልተከፈለም';
+    }
+    unset($item);
+
+    krsort($history);
+    return array_values($history);
+}
+
+function record_membership_payment($conn, $memberId, $month, $amount, $method = 'Cash', $recordedBy = null, $ref = null, $offlineUuid = null, $notes = null) {
+    $memberId = (int)$memberId;
+    $amount = (float)$amount;
+
+    // Idempotency check with offline_uuid
+    if ($offlineUuid) {
+        $check = mysqli_query($conn, "SELECT id FROM membership_payments WHERE offline_uuid = '" . mysqli_real_escape_string($conn, $offlineUuid) . "' LIMIT 1");
+        if ($check && mysqli_num_rows($check) > 0) {
+            $existing = mysqli_fetch_assoc($check);
+            return (int)$existing['id'];
+        }
+    }
+
+    $stmt = mysqli_prepare($conn, "INSERT INTO membership_payments 
+        (member_id, payment_month, amount, payment_method, recorded_by, reference_number, offline_uuid, sync_status, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'synced', ?)");
+    mysqli_stmt_bind_param($stmt, 'isdsisss', $memberId, $month, $amount, $method, $recordedBy, $ref, $offlineUuid, $notes);
+    mysqli_stmt_execute($stmt);
+    $paymentId = mysqli_insert_id($conn);
+    mysqli_stmt_close($stmt);
+
+    // Fetch member user_id to notify
+    $mRow = mysqli_fetch_assoc(mysqli_query($conn, "SELECT user_id FROM members WHERE id = $memberId LIMIT 1"));
+    if ($mRow) {
+        $userId = (int)$mRow['user_id'];
+        $monthLbl = format_billing_month_amharic($month);
+        notify($conn, $userId, 'የአባልነት ክፍያ ተመዝግቧል', "ለ $monthLbl ወር " . number_format($amount, 2) . " ብር ክፍያዎ ተመዝግቧል። እናመሰግናለን።", 'payment_received', 'member/payments.php');
+    }
+
+    audit($conn, $recordedBy, 'membership_payment_recorded', "payment_id:$paymentId member_id:$memberId month:$month amount:$amount");
+    return $paymentId;
+}
+
+// ---------------------------------------------------------------
+// BOOK BORROWABILITY & STRICT ELIGIBILITY CHECKS
+// ---------------------------------------------------------------
+function is_book_borrowable($bookRow) {
+    if (!isset($bookRow['is_borrowable'])) return true;
+    return ((int)$bookRow['is_borrowable'] === 1);
+}
+
+function verify_borrow_eligibility($conn, $memberId, $bookId, $copyId = null) {
+    $memberId = (int)$memberId;
+    $bookId = (int)$bookId;
+
+    // 1. Member check
+    $mQuery = mysqli_query($conn, "SELECT m.*, u.status, u.full_name FROM members m JOIN users u ON u.id = m.user_id WHERE m.id = $memberId LIMIT 1");
+    $member = mysqli_fetch_assoc($mQuery);
+    $memberValid = ($member && $member['status'] === 'active' && !is_member_blocked($conn, $member['user_id']));
+
+    // 2. Monthly payment check
+    $paymentStatus = get_member_payment_status($conn, $memberId);
+    $paymentValid = $paymentStatus['is_paid'];
+
+    // 3. Book check & borrowability
+    $bQuery = mysqli_query($conn, "SELECT * FROM books WHERE id = $bookId LIMIT 1");
+    $book = mysqli_fetch_assoc($bQuery);
+    $bookExists = ($book !== null);
+    $bookBorrowable = ($bookExists && is_book_borrowable($book) && $book['borrow_status'] !== 'restricted' && $book['borrow_status'] !== 'archived');
+
+    // 4. Physical copy check
+    $copyAvailable = false;
+    $foundCopyId = null;
+    if ($copyId) {
+        $cQuery = mysqli_query($conn, "SELECT * FROM book_copies WHERE id = " . (int)$copyId . " AND book_id = $bookId AND status = 'available' LIMIT 1");
+        if ($cRow = mysqli_fetch_assoc($cQuery)) {
+            $copyAvailable = true;
+            $foundCopyId = (int)$cRow['id'];
+        }
+    } else {
+        $cQuery = mysqli_query($conn, "SELECT id FROM book_copies WHERE book_id = $bookId AND status = 'available' LIMIT 1");
+        if ($cRow = mysqli_fetch_assoc($cQuery)) {
+            $copyAvailable = true;
+            $foundCopyId = (int)$cRow['id'];
+        }
+    }
+
+    // 5. Max active borrows check
+    $maxBorrows = (int)get_setting($conn, 'max_active_borrows', 3);
+    $activeBorrows = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM borrow_records WHERE member_id = $memberId AND status = 'borrowed'"))['c'];
+    $borrowLimitOk = ($activeBorrows < $maxBorrows);
+
+    $canBorrow = ($memberValid && $paymentValid && $bookBorrowable && $copyAvailable && $borrowLimitOk);
+
+    return [
+        'can_borrow' => $canBorrow,
+        'copy_id' => $foundCopyId,
+        'member' => $member,
+        'book' => $book,
+        'checks' => [
+            'member' => [
+                'passed' => $memberValid,
+                'title' => 'የአባል ማረጋገጫ',
+                'detail' => $memberValid ? 'ንቁ አባል ተረጋግጧል' : ($member ? 'አባሉ ታግዷል ወይም አልጸደቀም' : 'አባሉ አልተገኘም')
+            ],
+            'payment' => [
+                'passed' => $paymentValid,
+                'title' => 'የዚህ ወር ክፍያ (' . $paymentStatus['month_label'] . ')',
+                'detail' => $paymentValid 
+                    ? 'ተከፍሏል (' . number_format($paymentStatus['amount_paid'], 2) . ' ብር)'
+                    : 'አልተከፈለም (' . number_format($paymentStatus['amount_paid'], 2) . ' / ' . number_format($paymentStatus['minimum_required'], 2) . ' ብር)'
+            ],
+            'borrowable' => [
+                'passed' => $bookBorrowable,
+                'title' => 'መጽሐፉ ለመዋስ ተፈቅዷል',
+                'detail' => $bookBorrowable 
+                    ? 'ለመዋስ የተፈቀደ' 
+                    : ($book['non_borrowable_reason'] ?: 'ይህ መጽሐፍ ለመዋስ አይፈቀድም')
+            ],
+            'availability' => [
+                'passed' => $copyAvailable,
+                'title' => 'አካላዊ ቅጂ ይገኛል',
+                'detail' => $copyAvailable ? 'የሚገኝ ቅጂ አለ' : 'አሁን ለማበደር የሚገኝ ቅጂ የለም'
+            ],
+            'limit' => [
+                'passed' => $borrowLimitOk,
+                'title' => 'የውሰት ብዛት ገደብ',
+                'detail' => $borrowLimitOk ? "በውሰት ላይ ያለ፦ $activeBorrows / $maxBorrows" : "ከፍተኛ የውሰት ገደብ ($maxBorrows) ላይ ደርሷል"
+            ]
+        ]
+    ];
+}
+
+// ---------------------------------------------------------------
+// QR CODE HELPERS
+// ---------------------------------------------------------------
+function resolve_copy_by_qr($conn, $qrIdentifier) {
+    $qr = trim($qrIdentifier);
+    // If a full URL is scanned (e.g. https://domain.com/qr.php?code=ATS-COPY-0001)
+    if (strpos($qr, 'code=') !== false) {
+        $parts = parse_url($qr);
+        if (!empty($parts['query'])) {
+            parse_str($parts['query'], $params);
+            if (!empty($params['code'])) {
+                $qr = trim($params['code']);
+            }
+        }
+    }
+    $stmt = mysqli_prepare($conn, "SELECT bc.*, b.title, b.author, b.description, b.cover_image, b.cover_original, b.cover_optimized, b.borrow_status, b.is_borrowable, b.non_borrowable_reason, b.price, b.publication_year, b.publisher, b.position, c.name AS category_name, r.name AS room_name, s.name AS shelf_name
+        FROM book_copies bc
+        JOIN books b ON b.id = bc.book_id
+        LEFT JOIN categories c ON c.id = b.category_id
+        LEFT JOIN rooms r ON r.id = b.room_id
+        LEFT JOIN shelves s ON s.id = b.shelf_id
+        WHERE bc.qr_identifier = ? OR bc.copy_code = ? LIMIT 1");
+    mysqli_stmt_bind_param($stmt, 'ss', $qr, $qr);
+    mysqli_stmt_execute($stmt);
+    $res = mysqli_stmt_get_result($stmt);
+    return mysqli_fetch_assoc($res);
+}
+
+function get_qr_url($qrIdentifier) {
+    $base = defined('BASE_URL') ? BASE_URL : '/';
+    $base = '/' . trim($base, '/') . '/';
+    if ($base === '//') $base = '/';
+    return $base . 'qr.php?code=' . urlencode($qrIdentifier);
+}
+
+// ---------------------------------------------------------------
+// TELEGRAM BOT HELPERS
+// ---------------------------------------------------------------
+
+/**
+ * Send a plain-text or HTML message to a Telegram chat, optionally with a custom keyboard.
+ * Returns true on success, false on failure.
+ */
+function telegram_send($conn, $chatId, $text, $replyMarkup = null) {
+    $token = get_setting($conn, 'telegram_bot_token', '');
+    if (!$token || !$chatId) return false;
+
+    $payload = [
+        'chat_id'    => (int)$chatId,
+        'text'       => $text,
+        'parse_mode' => 'HTML',
+    ];
+    if ($replyMarkup !== null) {
+        $payload['reply_markup'] = $replyMarkup;
+    }
+
+    $url  = "https://api.telegram.org/bot{$token}/sendMessage";
+    $data = json_encode($payload);
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $data,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+        CURLOPT_TIMEOUT        => 8,
+        CURLOPT_SSL_VERIFYPEER => false,
+    ]);
+    $res = curl_exec($ch);
+    $err = curl_errno($ch);
+    curl_close($ch);
+
+    if ($err) return false;
+    $decoded = json_decode($res, true);
+    return isset($decoded['ok']) && $decoded['ok'] === true;
+}
+
+/**
+ * Main Amharic Keyboard Menu for Telegram Bot
+ */
+function get_bot_main_keyboard() {
+    return [
+        'keyboard' => [
+            [['text' => '📚 ያዋስኳቸው መጻሕፍት'], ['text' => '💰 ወርሃዊ ክፍያ']],
+            [['text' => '⚠️ የቅጣት መረጃ'], ['text' => '🔍 መጽሐፍ ፈልግ']],
+            [['text' => '🪪 የእኔ ዲጂታል ካርድ'], ['text' => '❓ እርዳታ']]
+        ],
+        'resize_keyboard' => true,
+        'one_time_keyboard' => false
+    ];
+}
+
+/**
+ * Send Telegram message to a user by user_id (looks up their chat_id).
+ */
+function telegram_notify_user($conn, $userId, $text, $replyMarkup = null) {
+    $uid = (int)$userId;
+    $row = mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT telegram_chat_id, telegram_joined FROM users WHERE id=$uid LIMIT 1"));
+    if (!$row || !$row['telegram_chat_id']) return false;
+    return telegram_send($conn, $row['telegram_chat_id'], $text, $replyMarkup);
+}
+
+/**
+ * Send Telegram to ALL users who have verified their Telegram account.
+ * Use for broadcasts from admin.
+ */
+function telegram_broadcast($conn, $text) {
+    $res = mysqli_query($conn,
+        "SELECT telegram_chat_id FROM users WHERE telegram_joined=1 AND telegram_chat_id IS NOT NULL");
+    $sent = 0;
+    while ($r = mysqli_fetch_assoc($res)) {
+        if (telegram_send($conn, $r['telegram_chat_id'], $text)) $sent++;
+        usleep(50000); // 50ms delay between messages (Telegram rate limit)
+    }
+    return $sent;
+}
+
+// ---------------------------------------------------------------
+// OVERDUE FINE HELPERS  (5 ብር/ቀን)
+// ---------------------------------------------------------------
+
+/**
+ * Calculate the current fine for a borrow record.
+ * Fine = overdue_days * fine_per_day — already_paid — waived
+ */
+function calculate_overdue_fine($conn, $recordRow) {
+    if (empty($recordRow['due_date']) || $recordRow['status'] === 'returned') return 0.0;
+    $dueDate    = new DateTime($recordRow['due_date']);
+    $today      = new DateTime(date('Y-m-d'));
+    $graceDays  = (int)get_setting($conn, 'fine_grace_days', 0);
+    $overdueDays = max(0, (int)$today->diff($dueDate)->days - ($dueDate > $today ? 0 : 0));
+
+    if ($today <= $dueDate) return 0.0; // not overdue yet
+
+    $overdueDays  = (int)$today->diff($dueDate)->days;
+    $overdueDays  = max(0, $overdueDays - $graceDays);
+    $finePerDay   = (float)get_setting($conn, 'overdue_fine_per_day', 5);
+    $grossFine    = $overdueDays * $finePerDay;
+    $alreadyPaid  = (float)($recordRow['fine_paid']   ?? 0);
+    $waived       = (float)($recordRow['fine_waived'] ?? 0);
+    $netFine      = max(0, $grossFine - $alreadyPaid - $waived);
+    return round($netFine, 2);
+}
+
+/**
+ * Update all active borrow_records with current overdue fines.
+ * Called from cron or on-demand.
+ */
+function recalculate_all_fines($conn) {
+    $finePerDay  = (float)get_setting($conn, 'overdue_fine_per_day', 5);
+    $graceDays   = (int)get_setting($conn, 'fine_grace_days', 0);
+    $today       = date('Y-m-d');
+
+    mysqli_query($conn, "
+        UPDATE borrow_records
+        SET overdue_fine = GREATEST(0,
+              (DATEDIFF('$today', due_date) - $graceDays) * $finePerDay
+            ),
+            last_fine_calc = '$today'
+        WHERE status = 'borrowed'
+          AND due_date < '$today'
+    ");
+}
+
+/**
+ * Get total outstanding fine for a member (unpaid + unwaived).
+ */
+function get_member_outstanding_fine($conn, $memberId) {
+    $memberId = (int)$memberId;
+    $row = mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT COALESCE(SUM(overdue_fine - fine_paid - fine_waived), 0) AS total
+         FROM borrow_records
+         WHERE member_id = $memberId AND status = 'borrowed' AND overdue_fine > 0"));
+    return max(0, (float)($row['total'] ?? 0));
+}
+
+/**
+ * Record a fine payment (partial or full).
+ */
+function record_fine_payment($conn, $recordId, $memberId, $amount, $waived = 0, $recordedBy = null, $notes = '') {
+    $recordId   = (int)$recordId;
+    $memberId   = (int)$memberId;
+    $amount     = (float)$amount;
+    $waived     = (float)$waived;
+    $recordedBy = $recordedBy ? (int)$recordedBy : null;
+    $notesEsc   = mysqli_real_escape_string($conn, $notes);
+
+    $stmt = mysqli_prepare($conn,
+        "INSERT INTO fine_payments (record_id, member_id, amount, waived, recorded_by, notes)
+         VALUES (?,?,?,?,?,?)");
+    mysqli_stmt_bind_param($stmt, 'iiddis', $recordId, $memberId, $amount, $waived, $recordedBy, $notesEsc);
+    mysqli_stmt_execute($stmt);
+    mysqli_stmt_close($stmt);
+
+    // Update borrow_records cumulative paid/waived
+    mysqli_query($conn,
+        "UPDATE borrow_records
+         SET fine_paid   = fine_paid   + $amount,
+             fine_waived = fine_waived + $waived
+         WHERE id = $recordId");
+
+    audit($conn, $recordedBy, 'fine_payment_recorded', "record_id:$recordId amount:$amount waived:$waived");
+}
+
