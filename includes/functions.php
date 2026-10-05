@@ -19,8 +19,41 @@ function is_logged_in() {
 }
 
 function require_login() {
+    global $conn;
     if (!is_logged_in()) {
         redirect(rel_base() . 'login.php');
+        return;
+    }
+    
+    $userId = (int)($_SESSION['user']['id'] ?? 0);
+    if ($userId <= 0) {
+        $_SESSION = [];
+        redirect(rel_base() . 'login.php');
+        return;
+    }
+
+    if ($conn) {
+        $stmt = mysqli_prepare($conn, "SELECT id, status, role FROM users WHERE id = ? LIMIT 1");
+        if ($stmt) {
+            mysqli_stmt_bind_param($stmt, 'i', $userId);
+            mysqli_stmt_execute($stmt);
+            $userRow = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+            mysqli_stmt_close($stmt);
+
+            if (!$userRow || $userRow['status'] !== 'active' || is_member_blocked($conn, $userId)) {
+                $_SESSION = [];
+                if (ini_get("session.use_cookies")) {
+                    $params = session_get_cookie_params();
+                    setcookie(session_name(), '', time() - 42000, $params["path"], $params["domain"], $params["secure"], $params["httponly"]);
+                }
+                @session_destroy();
+                redirect(rel_base() . 'login.php?error=blocked');
+                return;
+            }
+
+            $_SESSION['user']['role'] = $userRow['role'];
+            $_SESSION['user']['status'] = $userRow['status'];
+        }
     }
 }
 
@@ -49,7 +82,106 @@ function rel_base() {
 
 function redirect($url) {
     header("Location: $url");
-    exit;
+    if (!defined('PHPUNIT_RUNNING')) exit;
+}
+
+// ---------------------------------------------------------------
+// LOGIN & REGISTRATION THROTTLING (10 MISTAKES -> 20 MIN BLOCK)
+// ---------------------------------------------------------------
+function get_client_ip() {
+    return clean($_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+}
+
+/**
+ * Check if identifier or IP is throttled (10 failed attempts within 20 minutes = 1200 seconds)
+ */
+function check_login_throttle($conn, $identifier, $ip = null) {
+    if (!$conn) return ['blocked' => false];
+    $ip = $ip ?: get_client_ip();
+    $cutoff = time() - 1200; // 20 minutes window
+
+    $stmt = mysqli_prepare($conn, "
+        SELECT COUNT(*) AS cnt, MIN(attempt_time) AS oldest_time 
+        FROM login_attempts 
+        WHERE (identifier = ? OR ip_address = ?) AND attempt_time > ?
+    ");
+    if (!$stmt) return ['blocked' => false];
+
+    mysqli_stmt_bind_param($stmt, 'ssi', $identifier, $ip, $cutoff);
+    mysqli_stmt_execute($stmt);
+    $res = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+    mysqli_stmt_close($stmt);
+
+    $cnt = (int)($res['cnt'] ?? 0);
+    if ($cnt >= 10) {
+        $remaining = max(1, 1200 - (time() - (int)$res['oldest_time']));
+        $remMin = ceil($remaining / 60);
+        return [
+            'blocked' => true,
+            'retry_after' => $remaining,
+            'message' => "በጣም ብዙ የተሳሳቱ የይለፍ ቃል ሙከራዎች ተደርገዋል። መለያው ለ 20 ደቂቃ ተቆልፏል (ከ {$remMin} ደቂቃ በኋላ እንደገና ይሞክሩ)።"
+        ];
+    }
+
+    return ['blocked' => false, 'attempts' => $cnt];
+}
+
+function record_login_attempt($conn, $identifier, $ip = null) {
+    if (!$conn) return;
+    $ip = $ip ?: get_client_ip();
+    $now = time();
+    $stmt = mysqli_prepare($conn, "INSERT INTO login_attempts (identifier, ip_address, attempt_time) VALUES (?, ?, ?)");
+    if ($stmt) {
+        mysqli_stmt_bind_param($stmt, 'ssi', $identifier, $ip, $now);
+        mysqli_stmt_execute($stmt);
+        mysqli_stmt_close($stmt);
+    }
+}
+
+function clear_login_attempts($conn, $identifier, $ip = null) {
+    if (!$conn) return;
+    $ip = $ip ?: get_client_ip();
+    $stmt = mysqli_prepare($conn, "DELETE FROM login_attempts WHERE identifier = ? OR ip_address = ?");
+    if ($stmt) {
+        mysqli_stmt_bind_param($stmt, 'ss', $identifier, $ip);
+        mysqli_stmt_execute($stmt);
+        mysqli_stmt_close($stmt);
+    }
+}
+
+function check_register_throttle($conn, $ip = null) {
+    if (!$conn) return ['blocked' => false];
+    $ip = $ip ?: get_client_ip();
+    $cutoff = time() - 3600; // 1 hour window
+
+    $stmt = mysqli_prepare($conn, "SELECT COUNT(*) AS cnt FROM register_attempts WHERE ip_address = ? AND attempt_time > ?");
+    if (!$stmt) return ['blocked' => false];
+
+    mysqli_stmt_bind_param($stmt, 'si', $ip, $cutoff);
+    mysqli_stmt_execute($stmt);
+    $res = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+    mysqli_stmt_close($stmt);
+
+    $cnt = (int)($res['cnt'] ?? 0);
+    if ($cnt >= 5) {
+        return [
+            'blocked' => true,
+            'message' => 'በዚህ ሰዓት ውስጥ ከተፈቀደው በላይ የምዝገባ ሙከራ አድርገዋል። እባክዎ ከጥቂት ጊዜ በኋላ ይሞክሩ።'
+        ];
+    }
+    return ['blocked' => false];
+}
+
+function record_register_attempt($conn, $ip = null) {
+    if (!$conn) return;
+    $ip = $ip ?: get_client_ip();
+    $now = time();
+    $stmt = mysqli_prepare($conn, "INSERT INTO register_attempts (ip_address, attempt_time) VALUES (?, ?)");
+    if ($stmt) {
+        mysqli_stmt_bind_param($stmt, 'si', $ip, $now);
+        mysqli_stmt_execute($stmt);
+        mysqli_stmt_close($stmt);
+    }
 }
 
 // ---------------------------------------------------------------

@@ -8,35 +8,54 @@ clear_expired_member_blocks($conn);
 if (current_user()) redirect(rel_base() . 'index.php');
 
 $error = '';
+if (empty($error) && isset($_GET['error']) && $_GET['error'] === 'blocked') {
+    $error = 'መለያዎ ለጊዜው ታግዷል፤ እባክዎ አስተዳዳሪውን ያነጋግሩ።';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify();
     $username = clean($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
 
-    $stmt = mysqli_prepare($conn, "SELECT * FROM users WHERE username = ? LIMIT 1");
-    mysqli_stmt_bind_param($stmt, 's', $username);
-    mysqli_stmt_execute($stmt);
-    $row = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
-
-    if (!$row || !password_verify($password, $row['password'])) {
-        $error = 'የተጠቃሚ ስም ወይም የሚስጥር ቁልፍ ትክክል አይደለም።';
-    } elseif ($row['status'] === 'pending') {
-        $error = 'መለያዎ በአስተዳዳሪ ማረጋገጫ በመጠባበቅ ላይ ነው።';
-    } elseif ($row['status'] === 'rejected') {
-        $error = 'ምዝገባዎ ተቀባይነት አላገኘም። ቤተ መጻሕፍቱን ያግኙ።';
-    } elseif ($row['status'] === 'suspended') {
-        $error = member_block_message($conn, $row['id']);
-    } elseif (is_member_blocked($conn, $row['id'])) {
-        $error = member_block_message($conn, $row['id']);
+    // Check login throttling (10 mistakes -> 20 min close)
+    $throttle = check_login_throttle($conn, $username);
+    if ($throttle['blocked']) {
+        $error = $throttle['message'];
     } else {
-        $_SESSION['user'] = [
-            'id' => $row['id'], 'full_name' => $row['full_name'],
-            'role' => $row['role'], 'username' => $row['username'],
-        ];
-        mysqli_query($conn, "UPDATE users SET last_login=NOW() WHERE id=" . (int)$row['id']);
-        audit($conn, $row['id'], 'login', '');
-        $target = ['admin' => 'admin/dashboard.php', 'librarian' => 'librarian/dashboard.php', 'member' => 'member/dashboard.php'][$row['role']] ?? 'index.php';
-        redirect(rel_base() . $target);
+        $stmt = mysqli_prepare($conn, "SELECT * FROM users WHERE username = ? LIMIT 1");
+        mysqli_stmt_bind_param($stmt, 's', $username);
+        mysqli_stmt_execute($stmt);
+        $row = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+        mysqli_stmt_close($stmt);
+
+        if (!$row || !password_verify($password, $row['password'])) {
+            record_login_attempt($conn, $username);
+            $error = 'የተጠቃሚ ስም ወይም የሚስጥር ቁልፍ ትክክል አይደለም።';
+        } elseif ($row['status'] === 'pending') {
+            $error = 'መለያዎ በአስተዳዳሪ ማረጋገጫ በመጠባበቅ ላይ ነው።';
+        } elseif ($row['status'] === 'rejected') {
+            $error = 'ምዝገባዎ ተቀባይነት አላገኘም። ቤተ መጻሕፍቱን ያግኙ።';
+        } elseif ($row['status'] === 'suspended') {
+            $error = member_block_message($conn, $row['id']);
+        } elseif (is_member_blocked($conn, $row['id'])) {
+            $error = member_block_message($conn, $row['id']);
+        } else {
+            // Login successful: reset attempts, regenerate session ID
+            clear_login_attempts($conn, $username);
+            session_regenerate_id(true);
+
+            $_SESSION['user'] = [
+                'id'        => $row['id'],
+                'full_name' => $row['full_name'],
+                'role'      => $row['role'],
+                'username'  => $row['username'],
+                'status'    => $row['status']
+            ];
+            mysqli_query($conn, "UPDATE users SET last_login=NOW() WHERE id=" . (int)$row['id']);
+            audit($conn, $row['id'], 'login', '');
+            $target = ['admin' => 'admin/dashboard.php', 'librarian' => 'librarian/dashboard.php', 'member' => 'member/dashboard.php'][$row['role']] ?? 'index.php';
+            redirect(rel_base() . $target);
+        }
     }
 }
 

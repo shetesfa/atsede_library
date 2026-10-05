@@ -30,6 +30,13 @@ $botUsername = get_setting($conn, 'telegram_bot_username', '');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify();
+    
+    // Check registration IP rate limit
+    $regThrottle = check_register_throttle($conn);
+    if ($regThrottle['blocked']) {
+        $errors[] = $regThrottle['message'];
+    }
+
     $old['full_name']         = clean($_POST['full_name']         ?? '');
     $old['phone']             = clean($_POST['phone']             ?? '');
     $old['class']             = clean($_POST['class']             ?? '');
@@ -85,10 +92,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $userId = mysqli_insert_id($conn);
         mysqli_stmt_close($stmt);
 
-        $stmt2 = mysqli_prepare($conn, "INSERT INTO members (user_id, class, student_id) VALUES (?,?,?)");
-        mysqli_stmt_bind_param($stmt2, 'iss', $userId, $old['class'], $old['student_id']);
+        $cardToken = bin2hex(random_bytes(16));
+        $stmt2 = mysqli_prepare($conn, "INSERT INTO members (user_id, class, student_id, card_token) VALUES (?,?,?,?)");
+        mysqli_stmt_bind_param($stmt2, 'isss', $userId, $old['class'], $old['student_id'], $cardToken);
         mysqli_stmt_execute($stmt2);
         mysqli_stmt_close($stmt2);
+
+        record_register_attempt($conn);
 
         $verifyToken = generate_telegram_verify_token($conn, $userId);
 

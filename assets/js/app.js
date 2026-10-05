@@ -15,7 +15,15 @@ function toast(message, type = 'info', duration = 3200) {
   const el = document.createElement('div');
   el.className = `toast-msg ${type}`;
   const icons = { success: 'bi-check-circle', danger: 'bi-x-circle', warning: 'bi-exclamation-triangle', info: 'bi-info-circle' };
-  el.innerHTML = `<i class="bi ${icons[type] || icons.info}"></i><span>${message}</span>`;
+  
+  const icon = document.createElement('i');
+  icon.className = `bi ${icons[type] || icons.info}`;
+  
+  const span = document.createElement('span');
+  span.textContent = message; // Safe against XSS
+  
+  el.appendChild(icon);
+  el.appendChild(span);
   stack.appendChild(el);
   setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateY(-10px)'; el.style.transition = '.25s'; setTimeout(() => el.remove(), 250); }, duration);
 }
@@ -75,21 +83,7 @@ function canShowInstallUi() {
 }
 
 function showInstallUi() {
-  if (!canShowInstallUi()) return;
-  if (sessionStorage.getItem('install_dismissed') !== '1') {
-    const banner = document.getElementById('install-banner');
-    if (banner) banner.style.display = 'flex';
-  }
-  const btn = document.getElementById('pwa-install-btn');
-  if (btn) btn.style.display = 'inline-flex';
-  const sidebarBtn = document.getElementById('pwa-install-sidebar');
-  if (sidebarBtn) sidebarBtn.style.display = 'flex';
-  const moreBtn = document.getElementById('pwa-install-more');
-  if (moreBtn) moreBtn.style.display = 'flex';
-  const bottomBtn = document.getElementById('pwa-install-bottom');
-  if (bottomBtn) bottomBtn.style.display = 'flex';
-  const homeCard = document.getElementById('home-install-card');
-  if (homeCard) homeCard.style.display = 'flex';
+  return;
 }
 
 function hideInstallUi() {

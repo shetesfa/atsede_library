@@ -28,6 +28,10 @@ abstract class TestCase extends BaseTestCase {
     protected function setUp(): void {
         parent::setUp();
         global $conn;
+        if (!$conn || !($conn instanceof mysqli) || $conn->connect_errno) {
+            $conn = new mysqli('localhost', 'root', '', 'atsede_test');
+            $conn->set_charset("utf8mb4");
+        }
         $this->conn = $conn;
         // Start transaction for test isolation
         $this->conn->begin_transaction();
@@ -66,8 +70,9 @@ abstract class TestCase extends BaseTestCase {
         $studentId = 'ST-' . rand(1000, 9999);
         $maxLimit = 3;
 
-        $stmt = $this->conn->prepare("INSERT INTO members (user_id, class, student_id, max_borrow_limit) VALUES (?, ?, ?, ?)");
-        $stmt->bind_param("issi", $userId, $class, $studentId, $maxLimit);
+        $cardToken = bin2hex(random_bytes(16));
+        $stmt = $this->conn->prepare("INSERT INTO members (user_id, class, student_id, max_borrow_limit, card_token) VALUES (?, ?, ?, ?, ?)");
+        $stmt->bind_param("issis", $userId, $class, $studentId, $maxLimit, $cardToken);
         $stmt->execute();
         $memberId = $stmt->insert_id;
         $stmt->close();
@@ -85,6 +90,7 @@ abstract class TestCase extends BaseTestCase {
             'user_id' => $userId,
             'class' => $class,
             'student_id' => $studentId,
+            'card_token' => $cardToken,
             'max_borrow_limit' => $maxLimit,
             'status' => $status
         ];

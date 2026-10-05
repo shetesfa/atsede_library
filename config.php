@@ -5,8 +5,32 @@
  * config.local.php NEVER goes to Git or shared hosting public folders.
  */
 
+// Project-specific session name and secure cookie parameters
 if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+    ini_set('session.use_strict_mode', '1');
+    session_name('atsede_sess_id');
+    
+    $isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
+    
+    session_set_cookie_params([
+        'lifetime' => 86400 * 7,
+        'path'     => '/',
+        'domain'   => '',
+        'secure'   => $isSecure,
+        'httponly' => true,
+        'samesite' => 'Lax'
+    ]);
+    
+    @session_start();
+}
+
+// Global Security Headers
+if (!headers_sent()) {
+    header('X-Content-Type-Options: nosniff');
+    header('X-Frame-Options: SAMEORIGIN');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+    header('Permissions-Policy: camera=(self), microphone=(), geolocation=()');
+    header("Content-Security-Policy: default-src 'self' https: data: 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: https: blob:;");
 }
 
 // ---- Load credentials from config.local.php or environment variables ---
