@@ -9,10 +9,6 @@ RUN install-php-extensions mysqli pdo_mysql gd zip
 # Enable Apache mod_rewrite & headers
 RUN a2enmod rewrite headers
 
-# Configure Apache to listen on dynamic $PORT provided by Render (defaults to 80)
-RUN sed -i 's/Listen 80/Listen ${PORT:-80}/g' /etc/apache2/ports.conf \
-    && sed -i 's/<VirtualHost \*:80>/<VirtualHost \*:${PORT:-80}>/g' /etc/apache2/sites-available/000-default.conf
-
 # Set Apache DocumentRoot configuration for clean URL rewriting and security
 RUN echo '<Directory /var/www/html>\n\
     Options -Indexes +FollowSymLinks\n\
@@ -30,5 +26,9 @@ RUN mkdir -p /var/www/html/uploads/covers /var/www/html/uploads/avatars /var/www
     && chmod -R 755 /var/www/html \
     && chmod -R 775 /var/www/html/uploads /var/www/html/logs /var/www/html/tmp
 
+# Copy runtime entrypoint script to dynamically configure $PORT
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 EXPOSE 80
-CMD ["apache2-foreground"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
