@@ -88,7 +88,7 @@ $port = (int)(getenv('DB_PORT') ?: ($localConfig['port'] ?? ($port ?? 3306)));
 
 $conn = mysqli_init();
 $caCert = getenv('DB_SSL_CA') ?: ($localConfig['ssl_ca'] ?? null);
-$useSsl = (bool)(getenv('DB_SSL') ?: ($localConfig['ssl'] ?? false) || (is_string($host) && str_contains($host, 'aivencloud.com')));
+$useSsl = (bool)(getenv('DB_SSL') ?: ($localConfig['ssl'] ?? false) || (is_string($host) && (str_contains($host, 'tidbcloud.com') || str_contains($host, 'aivencloud.com'))));
 
 if ($useSsl) {
     if ($caCert && file_exists($caCert)) {
