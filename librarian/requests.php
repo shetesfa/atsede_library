@@ -104,6 +104,9 @@ include __DIR__ . '/../includes/header.php';
     </div>
 
     <div class="text-muted" style="font-size:.82rem;margin-bottom:10px;">
+      <span class="badge" style="background:#0047AB;color:#FFB703;font-weight:900;font-size:.82rem;padding:3px 10px;border-radius:12px;letter-spacing:0.5px;margin-right:6px;">
+        <?= e($r['student_id'] ?: '—') ?>
+      </span>
       <i class="bi bi-person"></i> <strong><?= e($r['full_name']) ?></strong> (<?= e($r['phone']) ?>)
       <?php if ($r['class']): ?> · ክፍል <?= e($r['class']) ?><?php endif; ?>
       <br>

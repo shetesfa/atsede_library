@@ -84,8 +84,9 @@ function handle_telegram_update(array $update, mysqli $conn, string $botToken): 
                 }
 
                 $cleanName = htmlspecialchars($matchedUser['full_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                $matchedRole = $matchedUser['role'] ?? 'member';
                 $welcome = "✅ <b>እንኳን ደህና መጡ፣ {$cleanName}!</b>\n\nየቴሌግራም መለያዎ ከአጸደ ቤተ-መጻሕፍት ጋር በተሳካ ሁኔታ ተገናኝቷል።";
-                telegram_send($conn, $chatId, $welcome, get_bot_main_keyboard());
+                telegram_send($conn, $chatId, $welcome, get_bot_main_keyboard($matchedRole));
                 return;
             }
         }
@@ -96,10 +97,11 @@ function handle_telegram_update(array $update, mysqli $conn, string $botToken): 
 
     // Handle normal /start or help
     if ($text === '/start' || $text === '❓ እርዳታ' || $text === '/help') {
+        $userRole = $libUser['role'] ?? 'member';
         $resp = "📖 <b>አጸደ ቤተ-መጻሕፍት ቦት</b>\n\n" .
-                "በዚህ ቦት አማካኝነት ያዋሷቸውን መጻሕፍት፣ ወርሃዊ ክፍያ እና የቅጣት መረጃዎችን ማየት ይችላሉ።\n\n" .
+                "በዚህ ቦት አማካኝነት የተዋሷቸውን መጻሕፍት፣ ወርሃዊ ክፍያ እና የቅጣት መረጃዎችን ማየት ይችላሉ።\n\n" .
                 "ከታች ያሉትን አማራጮች ይጠቀሙ፦";
-        telegram_send($conn, $chatId, $resp, get_bot_main_keyboard());
+        telegram_send($conn, $chatId, $resp, get_bot_main_keyboard($userRole));
         return;
     }
 
@@ -145,7 +147,7 @@ function handle_telegram_update(array $update, mysqli $conn, string $botToken): 
 
     // Block group chats from personal commands
     if (!$isPrivateChat) {
-        if (in_array($text, ['📚 ያዋስኳቸው መጻሕፍት', '💰 ወርሃዊ ክፍያ', '⚠️ የቅጣት መረጃ', '🪪 የእኔ ዲጂታል ካርድ'])) {
+        if (in_array($text, ['📚 የተዋስኳቸው መጻሕፍት', '📚 ያዋስኳቸው መጻሕፍት', '💰 ወርሃዊ ክፍያ', '⚠️ የቅጣት መረጃ', '🪪 የእኔ ዲጂታል ካርድ', '👤 አባል ፈልግ (በID)'])) {
             telegram_send($conn, $chatId, "🔒 የግል መረጃዎችን በግሩፕ ውስጥ ማየት አይፈቀድም። እባክዎ ለቦቱ በግል መልዕክት (Private Chat) ይላኩ።");
         }
         return;
@@ -165,7 +167,7 @@ function handle_telegram_update(array $update, mysqli $conn, string $botToken): 
     $memberId = (int)($libUser['member_id'] ?? 0);
 
     // 1. Borrowed Books
-    if ($text === '📚 ያዋስኳቸው መጻሕፍት' || $text === '/mybooks') {
+    if ($text === '📚 የተዋስኳቸው መጻሕፍት' || $text === '📚 ያዋስኳቸው መጻሕፍት' || $text === '/mybooks') {
         if (!$memberId) {
             telegram_send($conn, $chatId, "የአባልነት መረጃ አልተገኘም።");
             return;
@@ -253,14 +255,128 @@ function handle_telegram_update(array $update, mysqli $conn, string $botToken): 
         $cName = htmlspecialchars($libUser['full_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $cPhone = htmlspecialchars($libUser['phone'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $cClass = htmlspecialchars($libUser['class'] ?? 'የተማሪ ክፍል አልተገለጸም', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $cStudId = htmlspecialchars($libUser['student_id'] ?? '—', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $cStudId = htmlspecialchars($libUser['student_id'] ?? 'አልተሰጠም', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 
         $cardInfo = "🪪 <b>የአጸደ ቤተ-መጻሕፍት ዲጂታል ካርድ</b>\n\n" .
-                    "👤 ስም፦ <b>{$cName}</b>\n" .
-                    "📱 ስልክ፦ {$cPhone}\n" .
-                    "🏫 ክፍል፦ {$cClass}\n" .
-                    "🆔 መለያ ቁጥር፦ {$cStudId}\n";
+                    "🆔 <b>መለያ ቁጥር፦</b> <code>{$cStudId}</code>\n" .
+                    "👤 <b>ስም፦</b> {$cName}\n" .
+                    "📱 <b>ስልክ፦</b> {$cPhone}\n" .
+                    "🏫 <b>ክፍል፦</b> {$cClass}\n";
         telegram_send($conn, $chatId, $cardInfo);
+        return;
+    }
+
+    // 4.1 Admin Member Search by ID / Name / Phone (Admin/Librarian Only)
+    if ((str_starts_with($text, '/member') || str_starts_with($text, '👤 አባል ፈልግ')) && in_array($libUser['role'] ?? '', ['admin', 'librarian'])) {
+        $term = trim(str_replace(['/member', '👤 አባል ፈልግ (በID)', '👤 አባል ፈልግ'], '', $text));
+        if ($term === '') {
+            telegram_send($conn, $chatId, "👤 <b>አባል ለመፈለግ፦</b>\nእባክዎ የመታወቂያ ቁጥር (ID)፣ ስም ወይም ስልክ ያስገቡ፦\nምሳሌ፦ <code>/member አጸደቤይ01</code> ወይም <code>/member 01</code>");
+            return;
+        }
+
+        $cleanTerm = format_member_student_id($term);
+        $escaped = mysqli_real_escape_string($conn, $term);
+        $escapedClean = mysqli_real_escape_string($conn, $cleanTerm);
+
+        $mQuery = mysqli_query($conn, "
+            SELECT u.id, u.full_name, u.phone, u.status, m.class, m.student_id, m.id AS member_id,
+              (SELECT COUNT(*) FROM borrow_records WHERE member_id=m.id AND status='borrowed') AS active_loans
+            FROM users u 
+            JOIN members m ON m.user_id = u.id 
+            WHERE m.student_id = '$escaped' 
+               OR m.student_id = '$escapedClean' 
+               OR m.student_id LIKE '%$escaped%' 
+               OR u.full_name LIKE '%$escaped%' 
+               OR u.phone LIKE '%$escaped%' 
+            LIMIT 5
+        ");
+
+        if (!$mQuery || mysqli_num_rows($mQuery) === 0) {
+            telegram_send($conn, $chatId, "❌ '<b>" . htmlspecialchars($term) . "</b>' በሚል ምንም አባል አልተገኘም።");
+        } else {
+            $rep = "👥 <b>የአባላት ፍለጋ ውጤት፦</b>\n\n";
+            while ($mb = mysqli_fetch_assoc($mQuery)) {
+                $mbName = htmlspecialchars($mb['full_name']);
+                $mbId = htmlspecialchars($mb['student_id'] ?: 'አልተሰጠም');
+                $mbPhone = htmlspecialchars($mb['phone']);
+                $mbClass = htmlspecialchars($mb['class'] ?: '—');
+                $mbLoans = (int)$mb['active_loans'];
+                $mbStatus = $mb['status'] === 'active' ? '✅ ንቁ' : '⚠️ ' . $mb['status'];
+                $rep .= "🆔 <code>{$mbId}</code>\n" .
+                        "👤 <b>ስም፦</b> {$mbName}\n" .
+                        "📱 <b>ስልክ፦</b> {$mbPhone}\n" .
+                        "🏫 <b>ክፍል፦</b> {$mbClass}\n" .
+                        "📖 <b>የተዋሳቸው፦</b> {$mbLoans}\n" .
+                        "📌 <b>ሁኔታ፦</b> {$mbStatus}\n\n";
+            }
+            telegram_send($conn, $chatId, $rep);
+        }
+        return;
+    }
+
+    // 5. Admin Statistics (Admin/Librarian Only)
+    if (($text === '📊 የአድሚን ስታትስቲክስ' || $text === '/admin_stats') && in_array($libUser['role'] ?? '', ['admin', 'librarian'])) {
+        $totalB = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM books"))['c'];
+        $borrowedC = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM book_copies WHERE status='borrowed'"))['c'];
+        $availC = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM book_copies WHERE status='available'"))['c'];
+        $pendingReq = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM borrow_requests WHERE status='pending'"))['c'];
+        $membersC = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM users WHERE role='member' AND status='active'"))['c'];
+
+        $statsMsg = "📊 <b>የአጸደ ቤተ-መጻሕፍት ወቅታዊ ስታትስቲክስ</b>\n\n" .
+                    "📚 ጠቅላላ መጻሕፍት፦ <b>{$totalB}</b>\n" .
+                    "📦 ዝግጁ ቅጂዎች፦ <b>{$availC}</b>\n" .
+                    "📖 በውሰት ላይ ያሉ፦ <b>{$borrowedC}</b>\n" .
+                    "👥 ንቁ አባላት፦ <b>{$membersC}</b>\n" .
+                    "⏳ ያልተስተናገዱ የመዋስ ጥያቄዎች፦ <b>{$pendingReq}</b>\n";
+        telegram_send($conn, $chatId, $statsMsg);
+        return;
+    }
+
+    // 6. Admin Pending Requests (Admin/Librarian Only)
+    if (($text === '📥 የመዋስ ጥያቄዎች' || $text === '/admin_requests') && in_array($libUser['role'] ?? '', ['admin', 'librarian'])) {
+        $reqs = mysqli_query($conn, "SELECT br.*, b.title, u.full_name, u.phone 
+                                     FROM borrow_requests br 
+                                     JOIN books b ON b.id=br.book_id 
+                                     JOIN members m ON m.id=br.member_id 
+                                     JOIN users u ON u.id=m.user_id 
+                                     WHERE br.status='pending' 
+                                     ORDER BY br.created_at DESC LIMIT 5");
+        $cnt = mysqli_num_rows($reqs);
+        if ($cnt === 0) {
+            telegram_send($conn, $chatId, "✅ በአሁኑ ሰዓት በመጠባበቅ ላይ ያለ ምንም የመዋስ ጥያቄ የለም።");
+        } else {
+            $reqMsg = "📥 <b>ያልተስተናገዱ የመዋስ ጥያቄዎች ({$cnt})፦</b>\n\n";
+            while ($r = mysqli_fetch_assoc($reqs)) {
+                $mName = htmlspecialchars($r['full_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                $bTitle = htmlspecialchars($r['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                $reqMsg .= "👤 <b>{$mName}</b> ({$r['phone']})\n📖 መጽሐፍ፦ {$bTitle}\n📅 የቀረበበት፦ " . formatDate($r['created_at']) . "\n\n";
+            }
+            telegram_send($conn, $chatId, $reqMsg);
+        }
+        return;
+    }
+
+    // 7. Check and Read Notifications (Syncs with website/app)
+    if ($text === '🔔 ማሳወቂያዎች' || $text === '/notifications') {
+        $uId = (int)$libUser['id'];
+        $nRes = mysqli_query($conn, "SELECT * FROM notifications 
+                                     WHERE (user_id = $uId OR user_id IS NULL) 
+                                     ORDER BY created_at DESC LIMIT 5");
+        if (mysqli_num_rows($nRes) === 0) {
+            telegram_send($conn, $chatId, "🔔 ምንም ማሳወቂያ የለዎትም።");
+        } else {
+            $nMsg = "🔔 <b>የቅርብ ጊዜ ማሳወቂያዎች፦</b>\n\n";
+            while ($nRow = mysqli_fetch_assoc($nRes)) {
+                $nMsg .= "📌 <b>" . htmlspecialchars($nRow['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . "</b>\n" .
+                         htmlspecialchars($nRow['message'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . "\n" .
+                         "🕒 " . formatDate($nRow['created_at']) . "\n\n";
+            }
+            telegram_send($conn, $chatId, $nMsg);
+
+            // Mark personal notifications as read in database
+            mysqli_query($conn, "UPDATE notifications SET is_read = 1 WHERE user_id = $uId");
+            mysqli_query($conn, "INSERT IGNORE INTO notification_reads (user_id, notification_id) SELECT $uId, id FROM notifications WHERE user_id IS NULL");
+        }
         return;
     }
 

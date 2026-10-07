@@ -40,15 +40,17 @@ if ($appEnv === 'production') {
     ini_set('display_errors', '1');
 }
 
-// Project-specific session name and secure cookie parameters
+// Project-specific session name and long-lived persistent cookie (Stay Logged In like Telegram)
 if (session_status() === PHP_SESSION_NONE) {
     ini_set('session.use_strict_mode', '1');
+    ini_set('session.gc_maxlifetime', 86400 * 365); // 1 Year session duration
+    ini_set('session.cookie_lifetime', 86400 * 365); // 1 Year cookie duration
     session_name('atsede_sess_id');
     
     $isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
     
     session_set_cookie_params([
-        'lifetime' => 86400 * 7,
+        'lifetime' => 86400 * 365, // 1 Year (Persistent Stay-Logged-In)
         'path'     => '/',
         'domain'   => '',
         'secure'   => $isSecure,
@@ -84,8 +86,28 @@ $pass = getenv('DB_PASS') !== false ? getenv('DB_PASS') : ($localConfig['pass'] 
 $db   = getenv('DB_NAME') ?: ($localConfig['db'] ?? ($db ?? 'atsede_library'));
 $port = (int)(getenv('DB_PORT') ?: ($localConfig['port'] ?? ($port ?? 3306)));
 
-$conn = @mysqli_connect($host, $user, $pass, $db, $port);
-if (!$conn) {
+$conn = mysqli_init();
+$caCert = getenv('DB_SSL_CA') ?: ($localConfig['ssl_ca'] ?? null);
+$useSsl = (bool)(getenv('DB_SSL') ?: ($localConfig['ssl'] ?? false) || (is_string($host) && str_contains($host, 'aivencloud.com')));
+
+if ($useSsl) {
+    if ($caCert && file_exists($caCert)) {
+        mysqli_ssl_set($conn, NULL, NULL, $caCert, NULL, NULL);
+    } else {
+        mysqli_ssl_set($conn, NULL, NULL, NULL, NULL, NULL);
+    }
+    $connectFlags = MYSQLI_CLIENT_SSL;
+} else {
+    $connectFlags = 0;
+}
+
+$connected = @mysqli_real_connect($conn, $host, $user, $pass, $db, $port, NULL, $connectFlags);
+if (!$connected) {
+    // Fallback attempt standard connect
+    $connected = @mysqli_real_connect($conn, $host, $user, $pass, $db, $port);
+}
+
+if (!$connected) {
     error_log("Database connection error: " . mysqli_connect_error());
     die("አገልግሎቱ ለጊዜው አይገኝም፤ እባክዎ ከጥቂት ደቂቃዎች በኋላ ይሞክሩ።");
 }

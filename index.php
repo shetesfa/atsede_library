@@ -13,7 +13,7 @@ $newBooks = mysqli_query($conn, "
     (SELECT COUNT(*) FROM book_copies bc WHERE bc.book_id=b.id AND bc.status='available') AS available_count
   FROM books b LEFT JOIN categories c ON c.id=b.category_id
   WHERE b.borrow_status != 'archived'
-  ORDER BY b.created_at DESC LIMIT 8
+  ORDER BY b.created_at DESC, b.id DESC LIMIT 8
 ");
 
 $totalBooks = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM books WHERE borrow_status != 'archived'"))['c'] ?? 0;
@@ -85,7 +85,8 @@ include __DIR__ . '/includes/header.php';
         </div>
         <div class="book-body">
           <div class="book-title"><?= e($b['title']) ?></div>
-          <div class="book-author"><?= e($b['author']) ?></div>
+          <?php $authDisp = (!empty(trim($b['author'] ?? '')) && strtolower($b['author']) !== 'unwritten' && $b['author'] !== 'ጸሃፊው አልተገለጸም') ? $b['author'] : 'ጸሃፊው አልተገለጸም'; ?>
+          <div class="book-author" style="<?= $authDisp === 'ጸሃፊው አልተገለጸም' ? 'font-style:italic;opacity:0.85;' : '' ?>"><?= e($authDisp) ?></div>
           <div class="book-meta">
             <span class="badge <?= borrow_status_class($b['borrow_status']) ?>"><?= borrow_status_label($b['borrow_status']) ?></span>
             <span class="shelf-tag"><i class="bi bi-geo-alt"></i><?= (int)$b['available_count'] ?> ቀርቷል</span>

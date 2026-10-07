@@ -22,14 +22,19 @@ $activeKey = 'members';
 include __DIR__ . '/../includes/header.php';
 ?>
 
-<form method="get" class="card card-pad mb-3"><div class="input-group"><i class="bi bi-search"></i><input class="input" name="q" value="<?= e($q) ?>" placeholder="አባላትን ይፈልጉ…"></div></form>
+<form method="get" class="card card-pad mb-3">
+  <div class="input-group">
+    <i class="bi bi-search"></i>
+    <input class="input" name="q" value="<?= e($q) ?>" placeholder="በመታወቂያ ቁጥር (አጸደቤይ01)፣ በስም ወይም በስልክ ይፈልጉ…">
+  </div>
+</form>
 
 <div class="table-wrap">
   <table class="app-table app-stack">
-    <thead><tr><th>ስም</th><th>ክፍል</th><th>ስልክ</th><th>በስራ ላይ ያሉ ውሶች</th></tr></thead>
+    <thead><tr><th>መታወቂያ (ID)</th><th>ስም</th><th>ክፍል</th><th>ስልክ</th><th>በስራ ላይ ያሉ ውሶች</th></tr></thead>
     <tbody>
       <?php if (mysqli_num_rows($members) === 0): ?>
-        <tr><td colspan="4"><div class="empty-state"><i class="bi bi-people"></i><h4>አባል አልተገኘም</h4></div></td></tr>
+        <tr><td colspan="5"><div class="empty-state"><i class="bi bi-people"></i><h4>አባል አልተገኘም</h4></div></td></tr>
       <?php endif; ?>
       <?php while ($m = mysqli_fetch_assoc($members)): ?>
       <tr style="cursor:pointer;" onclick="openMemberDetail(<?= htmlspecialchars(json_encode([
@@ -43,7 +48,12 @@ include __DIR__ . '/../includes/header.php';
         'active_loans' => (int)$m['active_loans'],
         'total_borrows' => (int)$m['total_borrows'],
       ]), ENT_QUOTES, 'UTF-8') ?>)">
-        <td data-label="ስም"><strong style="color:var(--navy);"><?= e($m['full_name']) ?></strong><?= $m['student_id'] ? '<br><span class="text-muted" style="font-size:.74rem;">መታወቂያ '.e($m['student_id']).'</span>' : '' ?></td>
+        <td data-label="መታወቂያ (ID)">
+          <span class="badge" style="background:#0047AB;color:#FFB703;font-weight:900;font-size:.82rem;padding:4px 10px;border-radius:12px;letter-spacing:0.5px;">
+            <?= e($m['student_id'] ?: '—') ?>
+          </span>
+        </td>
+        <td data-label="ስም"><strong style="color:var(--navy);"><?= e($m['full_name']) ?></strong></td>
         <td data-label="ክፍል"><?= e($m['class'] ?: '—') ?></td>
         <td data-label="ስልክ"><?= e($m['phone']) ?></td>
         <td data-label="በስራ ላይ ያሉ ውሶች"><span class="badge <?= $m['active_loans']>0?'badge-warning':'badge-success' ?>"><?= (int)$m['active_loans'] ?></span></td>
@@ -67,6 +77,7 @@ function openMemberDetail(d) {
   document.getElementById('md-name').textContent = d.full_name;
   document.getElementById('md-body').innerHTML =
     '<div style="display:grid;gap:6px;">' +
+    '<div style="margin-bottom:8px;"><span class="badge" style="background:#0047AB;color:#FFB703;font-weight:900;font-size:.9rem;padding:5px 12px;border-radius:12px;">' + d.student_id + '</span></div>' +
     '<div><span class="text-muted">ስልክ፦</span> ' + d.phone + '</div>' +
     '<div><span class="text-muted">የተጠቃሚ ስም፦</span> ' + d.username + '</div>' +
     '<div><span class="text-muted">ክፍል፦</span> ' + d.class + '</div>' +

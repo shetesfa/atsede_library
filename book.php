@@ -53,6 +53,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $memberRow = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM members WHERE user_id=" . (int)$user['id']));
         $memberId = (int)$memberRow['id'];
 
+        // Strict 1-book borrowing rule
+        $activeBorrows = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM borrow_records WHERE member_id=$memberId AND status='borrowed'"))['c'];
+        $pendingReqs = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM borrow_requests WHERE member_id=$memberId AND status='pending' AND book_id != $bookId"))['c'];
+        if ($activeBorrows >= 1 || $pendingReqs >= 1) {
+            flash('msg', 'የውሰት ደንብ፦ በአንድ ጊዜ ከአንድ መጽሐፍ በላይ መዋስ አይፈቀድም። እባክዎ አስቀድመው የወሰዱትን መጽሐፍ ይመልሱ ወይም ቀደም ሲል የላኩትን ጥያቄ ይጠብቁ።', 'danger');
+            redirect('book.php?id=' . $bookId);
+        }
+
         $dupe = mysqli_query($conn, "SELECT id FROM borrow_requests WHERE member_id=$memberId AND book_id=$bookId AND status='pending'");
         if (mysqli_num_rows($dupe) > 0) {
             flash('msg', 'ለዚህ መጽሐፍ ቀደም ሲል ያስገቡት ጥያቄ በመጠባበቅ ላይ ነው።', 'warning');
@@ -179,7 +187,7 @@ include __DIR__ . '/includes/header.php';
         <h2 class="font-display" style="font-size:1.25rem;color:var(--navy);margin:0 0 4px;line-height:1.3;">
           <?= e($book['title']) ?>
         </h2>
-        <div class="text-muted" style="font-size:.88rem;margin-bottom:8px;">በ <?= e($book['author']) ?></div>
+        <div class="text-muted" style="font-size:.88rem;margin-bottom:8px;"><?= (!empty(trim($book['author'] ?? '')) && strtolower($book['author']) !== 'unwritten' && $book['author'] !== 'ጸሃፊው አልተገለጸም') ? 'በ ' . e($book['author']) : '<span class="fst-italic" style="color:var(--muted);">ጸሃፊው አልተገለጸም</span>' ?></div>
         
         <div class="d-flex flex-wrap gap-1 mb-2">
           <span class="badge badge-navy"><?= e($book['category_name']) ?></span>
@@ -431,10 +439,11 @@ document.getElementById('copyQrModal').addEventListener('click', function(e) {
           <select class="input" name="target_member_id" required>
             <option value="">-- አባል ይምረጡ --</option>
             <?php 
-              $mems = mysqli_query($conn, "SELECT m.id, u.full_name, u.phone FROM members m JOIN users u ON u.id=m.user_id WHERE u.status='active' ORDER BY u.full_name ASC");
+              $mems = mysqli_query($conn, "SELECT m.id, m.student_id, u.full_name, u.phone FROM members m JOIN users u ON u.id=m.user_id WHERE u.status='active' ORDER BY u.full_name ASC");
               while ($m = mysqli_fetch_assoc($mems)):
+                $idPrefix = !empty($m['student_id']) ? '[' . $m['student_id'] . '] ' : '';
             ?>
-              <option value="<?= (int)$m['id'] ?>"><?= e($m['full_name']) ?> (<?= e($m['phone']) ?>)</option>
+              <option value="<?= (int)$m['id'] ?>"><?= e($idPrefix . $m['full_name']) ?> (<?= e($m['phone']) ?>)</option>
             <?php endwhile; ?>
           </select>
         </div>

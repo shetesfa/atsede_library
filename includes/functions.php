@@ -6,6 +6,7 @@
  */
 
 require_once __DIR__ . '/lang.php';
+require_once __DIR__ . '/github_storage.php';
 
 // ---------------------------------------------------------------
 // AUTH / ROLE GUARDS
@@ -279,6 +280,39 @@ function send_push_to_user($conn, $userId, $title, $body, $link = null) {
 }
 
 // ---------------------------------------------------------------
+// MEMBER STUDENT ID GENERATOR & FORMATTER (አጸደቤይ01, አጸደቤይ02, ...)
+// ---------------------------------------------------------------
+function format_member_student_id($input) {
+    $input = trim((string)$input);
+    if ($input === '') return '';
+    if (preg_match('/(?:አጸደቤይ)?\s*([0-9]+)/u', $input, $matches)) {
+        $num = (int)$matches[1];
+        return 'አጸደቤይ' . sprintf('%02d', $num);
+    }
+    return $input;
+}
+
+function get_next_member_student_id($conn) {
+    $res = mysqli_query($conn, "SELECT student_id FROM members WHERE student_id LIKE 'አጸደቤይ%' ORDER BY id DESC");
+    $maxNum = 0;
+    if ($res) {
+        while ($row = mysqli_fetch_assoc($res)) {
+            if (preg_match('/አጸደቤይ([0-9]+)/u', $row['student_id'], $m)) {
+                $val = (int)$m[1];
+                if ($val > $maxNum) $maxNum = $val;
+            }
+        }
+    }
+    if ($maxNum === 0) {
+        $countRes = mysqli_query($conn, "SELECT COUNT(*) c FROM members");
+        $maxNum = $countRes ? (int)mysqli_fetch_assoc($countRes)['c'] : 0;
+    }
+    $nextNum = $maxNum + 1;
+    return 'አጸደቤይ' . sprintf('%02d', $nextNum);
+}
+
+
+// ---------------------------------------------------------------
 // CHURCH-STYLE BOOK CODE GENERATOR
 // Codes restart at 1 per category and append A/B/C...AA/AB for multiple copies.
 // ---------------------------------------------------------------
@@ -479,10 +513,8 @@ function library_logo_url() {
  */
 function book_cover_html($coverImage, $extraStyle = '') {
     if ($coverImage) {
-        // Ensure BASE_URL is used for consistent paths
-        $baseUrl = defined('BASE_URL') ? BASE_URL : '/';
-        $url = $baseUrl . 'uploads/covers/' . htmlspecialchars($coverImage, ENT_QUOTES, 'UTF-8');
-        return '<img src="' . $url . '" alt="" style="width:100%;height:100%;object-fit:cover;' . $extraStyle . '" onerror="this.src=\'/uploads/logo.png\';">';
+        $url = resolve_cover_url($coverImage);
+        return '<img src="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" alt="" style="width:100%;height:100%;object-fit:cover;' . $extraStyle . '" onerror="this.src=\'/uploads/logo.png\';">';
     }
     $logoUrl = library_logo_url();
     if ($logoUrl) {
@@ -998,13 +1030,20 @@ function generate_telegram_verify_token($conn, $userId) {
 /**
  * Main Amharic Keyboard Menu for Telegram Bot
  */
-function get_bot_main_keyboard() {
+function get_bot_main_keyboard($role = 'member') {
+    $buttons = [
+        [['text' => '📚 የተዋስኳቸው መጻሕፍት'], ['text' => '💰 ወርሃዊ ክፍያ']],
+        [['text' => '⚠️ የቅጣት መረጃ'], ['text' => '🔍 መጽሐፍ ፈልግ']],
+        [['text' => '🪪 የእኔ ዲጂታል ካርድ'], ['text' => '❓ እርዳታ']]
+    ];
+
+    if ($role === 'admin' || $role === 'librarian') {
+        $buttons[] = [['text' => '📊 የአድሚን ስታትስቲክስ'], ['text' => '📥 የመዋስ ጥያቄዎች']];
+        $buttons[] = [['text' => '👤 አባል ፈልግ (በID)'], ['text' => '🔔 ማሳወቂያዎች']];
+    }
+
     return [
-        'keyboard' => [
-            [['text' => '📚 ያዋስኳቸው መጻሕፍት'], ['text' => '💰 ወርሃዊ ክፍያ']],
-            [['text' => '⚠️ የቅጣት መረጃ'], ['text' => '🔍 መጽሐፍ ፈልግ']],
-            [['text' => '🪪 የእኔ ዲጂታል ካርድ'], ['text' => '❓ እርዳታ']]
-        ],
+        'keyboard' => $buttons,
         'resize_keyboard' => true,
         'one_time_keyboard' => false
     ];

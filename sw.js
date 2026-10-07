@@ -3,7 +3,7 @@
    Offline shell caching + Web Push display.
    ========================================================= */
 
-const CACHE_NAME = 'atsede-v17';
+const CACHE_NAME = 'atsede-v18';
 const OFFLINE_URL = './offline.php';
 const PRECACHE = [
   './',
@@ -76,6 +76,10 @@ self.addEventListener('fetch', (event) => {
         if (url.pathname.includes('search.php')) {
           const searchCached = await caches.match('./search.php');
           if (searchCached) return searchCached;
+        }
+        if (url.pathname.includes('book.php')) {
+          const bookCached = await caches.match(req);
+          if (bookCached) return bookCached;
         }
 
         // 3. Root navigation fallback to index.php (Always same view as online!)

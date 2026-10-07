@@ -20,6 +20,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_book'])) {
     $bookId = (int)($_POST['book_id'] ?? 0);
     $title = clean($_POST['title'] ?? '');
     $author = clean($_POST['author'] ?? '');
+    if ($author === '' || strtolower($author) === 'unwritten') {
+        $author = 'ጸሃፊው አልተገለጸም';
+    }
     $categoryId = (int)($_POST['category_id'] ?? 0);
     $quantity = max(1, (int)($_POST['quantity'] ?? 1));
     $year = clean($_POST['year'] ?? '') ?: null;
@@ -39,14 +42,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_book'])) {
         $uploadResult = secure_process_image($_FILES['cover_image']['tmp_name'], UPLOAD_DIR, 'cover_' . time());
         if ($uploadResult['success']) {
             $coverName = $uploadResult['file_name'];
+            // Automatically push to GitHub repository if configured (e.g., Render deployment)
+            $localSavedPath = UPLOAD_DIR . $coverName;
+            $githubUrl = upload_cover_to_github($localSavedPath, $coverName);
+            if ($githubUrl) {
+                $coverName = $githubUrl;
+            }
         } else {
             flash('msg', $uploadResult['error'], 'danger');
             redirect('books.php');
         }
     }
 
-    if ($title === '' || $author === '' || $categoryId === 0) {
-        flash('msg', 'የመጽሐፍ ስም፣ ደራሲ እና ምድብ ያስፈልጋሉ።', 'danger');
+    if ($title === '' || $categoryId === 0) {
+        flash('msg', 'የመጽሐፍ ስም እና ምድብ ያስፈልጋሉ።', 'danger');
         redirect('books.php');
     }
 
@@ -329,7 +338,7 @@ include __DIR__ . '/../includes/header.php';
       <input type="hidden" name="book_id" value="<?= (int)($editBook['id'] ?? 0) ?>">
       <div class="row g-2">
         <div class="col-12"><div class="field"><label><?= __('book_name') ?></label><input class="input" name="title" required value="<?= e($editBook['title'] ?? '') ?>"></div></div>
-        <div class="col-12"><div class="field"><label><?= __('author') ?></label><input class="input" name="author" required value="<?= e($editBook['author'] ?? '') ?>"></div></div>
+        <div class="col-12"><div class="field"><label><?= __('author') ?> <span class="text-muted" style="font-size:.78rem;font-weight:normal;">(አማራጭ)</span></label><input class="input" name="author" placeholder="ጸሃፊው ካልተገለጸ ባዶ ይተዉት" value="<?= e($editBook['author'] ?? '') ?>"></div></div>
         <div class="col-6">
           <div class="field"><label><?= __('category') ?></label>
             <select class="input" name="category_id" id="category_id" required>

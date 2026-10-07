@@ -40,7 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $old['full_name']         = clean($_POST['full_name']         ?? '');
     $old['phone']             = clean($_POST['phone']             ?? '');
     $old['class']             = clean($_POST['class']             ?? '');
-    $old['student_id']        = clean($_POST['student_id']        ?? '');
+    $rawStudentId             = clean($_POST['student_id']        ?? '');
+    $old['student_id']        = $rawStudentId === '' ? get_next_member_student_id($conn) : format_member_student_id($rawStudentId);
     $old['username']          = clean($_POST['username']          ?? '');
     $old['telegram_username'] = ltrim(clean($_POST['telegram_username'] ?? ''), '@');
     $password                 = $_POST['password'] ?? '';
@@ -193,8 +194,8 @@ include __DIR__ . '/includes/header.php';
       </div>
 
       <div class="field">
-        <label><?= __('student_id') ?> <span class="text-muted">(አማራጭ)</span></label>
-        <input class="input" name="student_id" value="<?= e($old['student_id']) ?>">
+        <label><?= __('student_id') ?> <span class="text-muted">(አማራጭ - ካልተሞላ በራስ-ሰር አጸደቤይXX ይሰጣል)</span></label>
+        <input class="input" name="student_id" value="<?= e($old['student_id']) ?>" placeholder="ምሳሌ፦ <?= e(get_next_member_student_id($conn)) ?>">
       </div>
 
       <div class="field">

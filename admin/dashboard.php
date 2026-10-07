@@ -8,7 +8,7 @@ $stats = [
     'ጠቅላላ መጻሕፍት' => mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM books"))['c'],
     'ጠቅላላ ቅጂዎች' => mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM book_copies"))['c'],
     'ይገኛል ያሉ መጻሕፍት' => mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM books WHERE borrow_status='available'"))['c'],
-    'ተወስደው ያሉ' => mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM book_copies WHERE status='borrowed'"))['c'],
+    'በውሰት ላይ ያሉ' => mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM book_copies WHERE status='borrowed'"))['c'],
     'ለውሰት ያልተፈቀዱ' => mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM books WHERE borrow_status='restricted'"))['c'],
     'ለንባብ ብቻ' => mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM books WHERE borrow_status='reference'"))['c'],
     'በማህደር ያሉ' => mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM books WHERE borrow_status='archived'"))['c'],
@@ -44,7 +44,10 @@ include __DIR__ . '/../includes/header.php';
 </div>
 <?php endif; ?>
 
-<div class="section-title">ቅርብ ጊዜ ድርጊቶች</div>
+<div class="section-title d-flex justify-content-between align-items-center">
+  <span>የቅርብ ጊዜ ድርጊቶች</span>
+  <a href="activities.php" class="see-all">ሁሉንም ድርጊቶች ይመልከቱ <i class="bi bi-arrow-right"></i></a>
+</div>
 <div class="table-wrap">
   <table class="app-table app-stack">
     <thead><tr><th>ማን</th><th>ድርጊት</th><th>መቼ</th></tr></thead>
@@ -62,10 +65,12 @@ include __DIR__ . '/../includes/header.php';
 </div>
 
 <div class="row g-2 mt-3">
-  <div class="col-6 col-md-3"><a href="librarians.php" class="card card-pad card-hover" style="display:block;text-align:center;"><i class="bi bi-person-badge" style="font-size:1.3rem;color:var(--gold-600);"></i><div style="font-weight:700;font-size:.82rem;margin-top:6px;color:var(--navy);">ቤተ-መጻሕፍት ኃላፊዎች</div></a></div>
-  <div class="col-6 col-md-3"><a href="categories.php" class="card card-pad card-hover" style="display:block;text-align:center;"><i class="bi bi-tags" style="font-size:1.3rem;color:var(--gold-600);"></i><div style="font-weight:700;font-size:.82rem;margin-top:6px;color:var(--navy);">ምድቦች</div></a></div>
-  <div class="col-6 col-md-3"><a href="notifications.php" class="card card-pad card-hover" style="display:block;text-align:center;"><i class="bi bi-megaphone" style="font-size:1.3rem;color:var(--gold-600);"></i><div style="font-weight:700;font-size:.82rem;margin-top:6px;color:var(--navy);">ማሳወቂያ ይላኩ</div></a></div>
-  <div class="col-6 col-md-3"><a href="reports.php" class="card card-pad card-hover" style="display:block;text-align:center;"><i class="bi bi-bar-chart" style="font-size:1.3rem;color:var(--gold-600);"></i><div style="font-weight:700;font-size:.82rem;margin-top:6px;color:var(--navy);">ሪፖርቶች</div></a></div>
+  <div class="col-6 col-md-4 col-lg-2"><a href="activities.php" class="card card-pad card-hover" style="display:block;text-align:center;"><i class="bi bi-clock-history" style="font-size:1.3rem;color:var(--gold-600);"></i><div style="font-weight:700;font-size:.82rem;margin-top:6px;color:var(--navy);">የድርጊቶች ታሪክ</div></a></div>
+  <div class="col-6 col-md-4 col-lg-2"><a href="librarians.php" class="card card-pad card-hover" style="display:block;text-align:center;"><i class="bi bi-person-badge" style="font-size:1.3rem;color:var(--gold-600);"></i><div style="font-weight:700;font-size:.82rem;margin-top:6px;color:var(--navy);">ቤተ-መጻሕፍት ኃላፊዎች</div></a></div>
+  <div class="col-6 col-md-4 col-lg-2"><a href="categories.php" class="card card-pad card-hover" style="display:block;text-align:center;"><i class="bi bi-tags" style="font-size:1.3rem;color:var(--gold-600);"></i><div style="font-weight:700;font-size:.82rem;margin-top:6px;color:var(--navy);">ምድቦች</div></a></div>
+  <div class="col-6 col-md-4 col-lg-2"><a href="notifications.php" class="card card-pad card-hover" style="display:block;text-align:center;"><i class="bi bi-megaphone" style="font-size:1.3rem;color:var(--gold-600);"></i><div style="font-weight:700;font-size:.82rem;margin-top:6px;color:var(--navy);">ማሳወቂያ ይላኩ</div></a></div>
+  <div class="col-6 col-md-4 col-lg-2"><a href="reports.php" class="card card-pad card-hover" style="display:block;text-align:center;"><i class="bi bi-bar-chart" style="font-size:1.3rem;color:var(--gold-600);"></i><div style="font-weight:700;font-size:.82rem;margin-top:6px;color:var(--navy);">ሪፖርቶች</div></a></div>
+  <div class="col-6 col-md-4 col-lg-2"><a href="settings.php" class="card card-pad card-hover" style="display:block;text-align:center;"><i class="bi bi-gear" style="font-size:1.3rem;color:var(--gold-600);"></i><div style="font-weight:700;font-size:.82rem;margin-top:6px;color:var(--navy);">ቅንብሮች</div></a></div>
 </div>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>

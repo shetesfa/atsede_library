@@ -65,7 +65,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $filter = $_GET['status'] ?? 'pending';
+$q = clean($_GET['q'] ?? '');
 $where = "u.role='member' AND u.status='" . mysqli_real_escape_string($conn, $filter) . "'";
+if ($q !== '') {
+    $like = mysqli_real_escape_string($conn, $q);
+    $where .= " AND (u.full_name LIKE '%$like%' OR u.phone LIKE '%$like%' OR u.username LIKE '%$like%' OR m.student_id LIKE '%$like%')";
+}
 
 $members = mysqli_query($conn, "
   SELECT u.*, m.class, m.student_id, m.blocked_until,
@@ -81,12 +86,20 @@ include __DIR__ . '/../includes/header.php';
 
 <div style="display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;">
   <?php foreach (['pending'=>__('pending'),'active'=>__('active'),'rejected'=>__('rejected'),'suspended'=>__('suspended')] as $k=>$lbl): ?>
-    <a href="?status=<?= $k ?>" class="btn <?= $filter===$k?'btn-navy':'btn-outline' ?> btn-sm"><?= $lbl ?></a>
+    <a href="?status=<?= $k ?><?= $q !== '' ? '&q=' . urlencode($q) : '' ?>" class="btn <?= $filter===$k?'btn-navy':'btn-outline' ?> btn-sm"><?= $lbl ?></a>
   <?php endforeach; ?>
 </div>
 
+<form method="get" class="card card-pad mb-3">
+  <input type="hidden" name="status" value="<?= e($filter) ?>">
+  <div class="input-group">
+    <i class="bi bi-search"></i>
+    <input class="input" name="q" value="<?= e($q) ?>" placeholder="በመታወቂያ ቁጥር (አጸደቤይ01)፣ በስም ወይም በስልክ ይፈልጉ…">
+  </div>
+</form>
+
 <?php if (mysqli_num_rows($members) === 0): ?>
-  <div class="empty-state"><i class="bi bi-people"></i><h4>ምንም የለም</h4></div>
+  <div class="empty-state"><i class="bi bi-people"></i><h4>ምንም አባል አልተገኘም</h4></div>
 <?php else: while ($m = mysqli_fetch_assoc($members)): ?>
   <div class="card card-pad mb-2">
     <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
@@ -104,12 +117,20 @@ include __DIR__ . '/../includes/header.php';
         'blocked_until' => $m['blocked_until'] ? formatDate($m['blocked_until']) : null,
         'status' => $m['status'],
       ]), ENT_QUOTES, 'UTF-8') ?>)">
-        <strong style="color:var(--navy);"><?= e($m['full_name']) ?></strong>
-        <i class="bi bi-chevron-right text-muted" style="font-size:.75rem;margin-left:4px;"></i><br>
-        <span class="text-muted" style="font-size:.8rem;"><?= e($m['phone']) ?> · ክፍል <?= e($m['class'] ?: '—') ?><?= $m['student_id'] ? ' · መታወቂያ '.e($m['student_id']) : '' ?></span><br>
-        <span class="text-muted" style="font-size:.74rem;">የተመዘገበው <?= formatDate($m['created_at']) ?></span>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
+          <span class="badge" style="background:#0047AB;color:#FFB703;font-weight:900;font-size:.82rem;padding:3px 10px;border-radius:12px;letter-spacing:0.5px;">
+            <?= e($m['student_id'] ?: 'አልተሰጠም') ?>
+          </span>
+          <strong style="color:var(--navy);font-size:1.02rem;"><?= e($m['full_name']) ?></strong>
+          <i class="bi bi-chevron-right text-muted" style="font-size:.75rem;"></i>
+        </div>
+        <div class="text-muted" style="font-size:.82rem;line-height:1.5;">
+          <span><i class="bi bi-telephone"></i> <?= e($m['phone']) ?></span> · 
+          <span>ክፍል <?= e($m['class'] ?: '—') ?></span><br>
+          <span style="font-size:.74rem;">የተመዘገበው <?= formatDate($m['created_at']) ?></span>
+        </div>
         <?php if ($m['blocked_until'] && strtotime($m['blocked_until']) > time()): ?>
-          <br><span class="badge badge-danger" style="margin-top:4px;">እስከ <?= formatDate($m['blocked_until']) ?> ታግዷል</span>
+          <span class="badge badge-danger" style="margin-top:6px;">እስከ <?= formatDate($m['blocked_until']) ?> ታግዷል</span>
         <?php endif; ?>
       </div>
       <button type="button" class="btn btn-outline btn-sm" onclick="event.stopPropagation(); openMemberDetail(<?= htmlspecialchars(json_encode([
@@ -175,6 +196,7 @@ include __DIR__ . '/../includes/header.php';
 function openMemberDetail(d) {
   document.getElementById('md-name').textContent = d.full_name;
   let html = '<div style="display:grid;gap:6px;">';
+  html += '<div style="margin-bottom:8px;"><span class="badge" style="background:#0047AB;color:#FFB703;font-weight:900;font-size:.9rem;padding:5px 12px;border-radius:12px;">' + d.student_id + '</span></div>';
   html += '<div><span class="text-muted">ስልክ፦</span> ' + d.phone + '</div>';
   html += '<div><span class="text-muted">የተጠቃሚ ስም፦</span> ' + d.username + '</div>';
   html += '<div><span class="text-muted">ክፍል፦</span> ' + d.class + '</div>';

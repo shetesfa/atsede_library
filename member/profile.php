@@ -73,11 +73,22 @@ $totalFine   = $memberId ? get_member_outstanding_fine($conn, $memberId) : 0;
 $borrowCount = $memberId ? (int)mysqli_fetch_assoc(mysqli_query($conn,
     "SELECT COUNT(*) c FROM borrow_records WHERE member_id=$memberId AND status='borrowed'"))['c'] : 0;
 
-$idCardQrData = rtrim(BASE_URL, '/') . '/ajax/member_info.php?uid=' . (int)$user['id'];
+$idCardQrData = rtrim(BASE_URL, '/') . '/verify_card.php?token=' . urlencode($row['card_token'] ?? '') . '&uid=' . (int)$user['id'];
 $tgJoined     = (int)($row['telegram_joined'] ?? 0);
 $botUsername  = get_setting($conn, 'telegram_bot_username', 'Atsedeteguhan_library_bot');
 $tgVerifyToken = !$tgJoined ? generate_telegram_verify_token($conn, $user['id']) : '';
-$idFormatted  = '#' . str_pad($user['id'], 5, '0', STR_PAD_LEFT);
+
+// Standard Member ID format starting with 'አጸደቤይ' followed by numbers (አጸደቤይ01, አጸደቤይ02, ...)
+if (!empty($row['student_id'])) {
+    if (str_starts_with($row['student_id'], 'አጸደቤይ')) {
+        $idFormatted = $row['student_id'];
+    } else {
+        $cleanNum = preg_replace('/[^0-9]/', '', $row['student_id']);
+        $idFormatted = 'አጸደቤይ' . (strlen($cleanNum) < 2 ? str_pad($cleanNum, 2, '0', STR_PAD_LEFT) : $cleanNum);
+    }
+} else {
+    $idFormatted = 'አጸደቤይ' . sprintf('%02d', $memberId);
+}
 
 $photoUrl = '';
 if (!empty($row['profile_photo']) && file_exists(__DIR__ . '/../' . $row['profile_photo'])) {
@@ -112,114 +123,112 @@ include __DIR__ . '/../includes/header.php';
 <div style="perspective:1000px;max-width:540px;margin:0 auto 16px;">
   <div id="id-card-flipper" style="position:relative;width:100%;transition:transform 0.6s;transform-style:preserve-3d;">
 
-    <!-- ───── FRONT FACE ───── -->
-    <div id="card-front" class="card" style="background:linear-gradient(135deg, #0A1128 0%, #1C2541 65%, #27344F 100%);border:2px solid #D4AF37;border-radius:20px;overflow:hidden;box-shadow:0 14px 35px rgba(10,17,40,0.45);color:#fff;min-height:310px;">
+    <!-- ───── FRONT FACE (WHITE PROFESSIONAL WITH BRAND BLUE & YELLOW) ───── -->
+    <div id="card-front" class="card" style="background:#FFFFFF;border:2px solid #0047AB;border-radius:20px;overflow:hidden;box-shadow:0 12px 35px rgba(0,71,171,0.15);color:#0B2545;min-height:310px;position:relative;">
       
-      <!-- Top Ribbon -->
-      <div style="background:rgba(212,175,55,0.15);padding:12px 18px;border-bottom:1px solid rgba(212,175,55,0.3);display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <!-- Top Brand Ribbon (Deep Royal Blue with Golden Yellow Accents) -->
+      <div style="background:linear-gradient(135deg, #0A2540 0%, #0047AB 100%);padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:8px;color:#fff;border-bottom:3.5px solid #FFB703;">
         <div style="display:flex;align-items:center;gap:10px;">
-          <span style="width:34px;height:34px;border-radius:50%;background:radial-gradient(circle, #D4AF37, #996515);display:inline-flex;align-items:center;justify-content:center;color:#0A1128;font-size:1.15rem;box-shadow:0 2px 6px rgba(212,175,55,0.4);">
+          <span style="width:38px;height:38px;border-radius:50%;background:#FFB703;display:inline-flex;align-items:center;justify-content:center;color:#0A2540;font-size:1.2rem;font-weight:900;box-shadow:0 2px 8px rgba(0,0,0,0.3);">
             <i class="bi bi-book-half"></i>
           </span>
           <div>
-            <div style="font-weight:800;font-size:.88rem;color:#D4AF37;line-height:1.2;">
+            <div style="font-weight:800;font-size:.95rem;color:#FFFFFF;line-height:1.2;letter-spacing:0.3px;">
               <?= e($libName) ?>
             </div>
-            <div style="font-size:.65rem;color:rgba(255,255,255,0.7);font-family:monospace;letter-spacing:1px;">
-              OFFICIAL MEMBER PASS · FRONT
+            <div style="font-size:.7rem;color:#FFE57F;letter-spacing:0.5px;font-weight:700;margin-top:2px;">
+              የአባልነት መታወቂያ ካርድ
             </div>
           </div>
         </div>
-        <span class="badge" style="background:#D4AF37;color:#0A1128;font-weight:800;font-size:.78rem;padding:4px 10px;border-radius:20px;font-family:monospace;">
+        <span class="badge" style="background:#FFB703;color:#0A2540;font-weight:900;font-size:.92rem;padding:6px 14px;border-radius:20px;letter-spacing:0.5px;box-shadow:0 2px 8px rgba(0,0,0,0.2);">
           <?= e($idFormatted) ?>
         </span>
       </div>
 
       <!-- Front Body -->
-      <div style="padding:18px;display:flex;align-items:center;gap:18px;">
-        <!-- Photo Frame -->
+      <div style="padding:18px;display:flex;align-items:center;gap:18px;background:#FFFFFF;">
+        <!-- Photo Frame (Double Border: Blue and Yellow) -->
         <div style="flex-shrink:0;text-align:center;">
-          <div style="width:105px;height:120px;border-radius:14px;border:2.5px solid #D4AF37;overflow:hidden;background:#131d36;box-shadow:0 6px 16px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;position:relative;">
+          <div style="width:105px;height:120px;border-radius:14px;border:3px solid #0047AB;outline:2px solid #FFB703;overflow:hidden;background:#F8FAFC;box-shadow:0 4px 14px rgba(0,71,171,0.15);display:flex;align-items:center;justify-content:center;position:relative;">
             <?php if ($photoUrl): ?>
               <img src="<?= e($photoUrl) ?>" alt="Member Photo" style="width:100%;height:100%;object-fit:cover;display:block;">
             <?php else: ?>
-              <i class="bi bi-person-fill" style="font-size:4rem;color:rgba(212,175,55,0.5);"></i>
+              <i class="bi bi-person-fill" style="font-size:4rem;color:#94A3B8;"></i>
             <?php endif; ?>
           </div>
-          <span class="badge" style="background:rgba(34,197,94,0.2);color:#4ade80;border:1px solid #4ade80;font-size:.65rem;margin-top:6px;display:inline-block;">
-            ✓ ንቁ አባል
+          <span class="badge" style="background:rgba(0,71,171,0.08);color:#0047AB;border:1.5px solid #0047AB;font-size:.68rem;margin-top:8px;display:inline-block;font-weight:800;border-radius:20px;padding:3px 8px;">
+            <i class="bi bi-patch-check-fill" style="color:#FFB703;"></i> ንቁ አባል
           </span>
         </div>
 
         <!-- Info Fields -->
         <div style="flex:1;">
-          <div style="font-size:.68rem;color:#D4AF37;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">ሙሉ ስም</div>
-          <div style="font-size:1.2rem;font-weight:800;color:#fff;line-height:1.2;margin-bottom:10px;">
+          <div style="font-size:.7rem;color:#D97706;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;">ሙሉ ስም</div>
+          <div style="font-size:1.3rem;font-weight:900;color:#0A2540;line-height:1.2;margin-bottom:12px;">
             <?= e($row['full_name']) ?>
           </div>
 
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:.8rem;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:.82rem;">
             <div>
-              <div style="color:rgba(255,255,255,0.55);font-size:.68rem;">ክፍል ደረጃ</div>
-              <div style="font-weight:700;color:#fff;"><?= e($row['class'] ?: '—') ?></div>
+              <div style="color:#64748B;font-size:.7rem;font-weight:600;">መለያ ቁጥር</div>
+              <div style="font-weight:900;color:#0047AB;font-size:.95rem;"><?= e($idFormatted) ?></div>
             </div>
             <div>
-              <div style="color:rgba(255,255,255,0.55);font-size:.68rem;">ስልክ ቁጥር</div>
-              <div style="font-weight:700;color:#fff;"><?= e($row['phone'] ?: '—') ?></div>
+              <div style="color:#64748B;font-size:.7rem;font-weight:600;">ክፍል ደረጃ</div>
+              <div style="font-weight:700;color:#1E293B;"><?= e($row['class'] ?: '—') ?></div>
             </div>
             <div>
-              <div style="color:rgba(255,255,255,0.55);font-size:.68rem;">ወርሃዊ ክፍያ</div>
-              <div style="font-weight:700;">
-                <?= ($ps && $ps['is_paid']) ? '<span style="color:#4ade80;">✓ ተከፍሏል</span>' : '<span style="color:#f87171;">✕ አልተከፈለም</span>' ?>
-              </div>
+              <div style="color:#64748B;font-size:.7rem;font-weight:600;">ስልክ ቁጥር</div>
+              <div style="font-weight:700;color:#1E293B;"><?= e($row['phone'] ?: '—') ?></div>
             </div>
             <div>
-              <div style="color:rgba(255,255,255,0.55);font-size:.68rem;">የአባልነት ዘመን</div>
-              <div style="font-weight:700;color:#fff;"><?= e(formatDate($row['member_since'])) ?></div>
+              <div style="color:#64748B;font-size:.7rem;font-weight:600;">የአባልነት ዘመን</div>
+              <div style="font-weight:700;color:#1E293B;"><?= e(formatDate($row['member_since'])) ?></div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Front Bottom -->
-      <div style="background:rgba(0,0,0,0.3);padding:8px 18px;border-top:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:center;font-size:.72rem;color:rgba(255,255,255,0.6);">
-        <span><i class="bi bi-shield-check text-gold"></i> ህጋዊና ዕውቅና ያለው የቤተ-መጻሕፍት መታወቂያ</span>
-        <span style="font-family:monospace;color:#D4AF37;">FRONT SIDE</span>
+      <!-- Front Bottom Ribbon -->
+      <div style="background:#F8FAFC;padding:10px 18px;border-top:1.5px solid #E2E8F0;display:flex;justify-content:space-between;align-items:center;font-size:.74rem;color:#64748B;font-weight:600;">
+        <span><i class="bi bi-shield-check" style="color:#FFB703;"></i> ህጋዊና ዕውቅና ያለው የቤተ-መጻሕፍት መታወቂያ</span>
+        <span style="font-weight:900;color:#0047AB;font-size:.82rem;"><?= e($idFormatted) ?></span>
       </div>
     </div>
 
-    <!-- ───── BACK FACE ───── -->
-    <div id="card-back" class="card" style="display:none;background:linear-gradient(135deg, #0A1128 0%, #1C2541 65%, #27344F 100%);border:2px solid #D4AF37;border-radius:20px;overflow:hidden;box-shadow:0 14px 35px rgba(10,17,40,0.45);color:#fff;min-height:310px;text-align:center;">
+    <!-- ───── BACK FACE (WHITE PROFESSIONAL WITH BRAND BLUE & YELLOW) ───── -->
+    <div id="card-back" class="card" style="display:none;background:#FFFFFF;border:2px solid #0047AB;border-radius:20px;overflow:hidden;box-shadow:0 12px 35px rgba(0,71,171,0.15);color:#0B2545;min-height:310px;text-align:center;">
       
-      <!-- Top Ribbon -->
-      <div style="background:rgba(212,175,55,0.15);padding:12px 18px;border-bottom:1px solid rgba(212,175,55,0.3);display:flex;align-items:center;justify-content:space-between;">
-        <span style="font-size:.85rem;font-weight:800;color:#D4AF37;letter-spacing:0.5px;">
+      <!-- Top Brand Ribbon -->
+      <div style="background:linear-gradient(135deg, #0A2540 0%, #0047AB 100%);padding:14px 18px;border-bottom:3.5px solid #FFB703;display:flex;align-items:center;justify-content:space-between;color:#fff;">
+        <span style="font-size:.95rem;font-weight:800;color:#FFFFFF;letter-spacing:0.5px;">
           <?= e($libName) ?>
         </span>
-        <span style="font-size:.65rem;color:rgba(255,255,255,0.7);font-family:monospace;">
-          BACK PASS · VERIFY
+        <span class="badge" style="background:#FFB703;color:#0A2540;font-weight:800;font-size:.78rem;padding:5px 12px;border-radius:14px;">
+          ማረጋገጫ QR
         </span>
       </div>
 
       <!-- Back Body: QR Code Centered -->
-      <div style="padding:20px 18px;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+      <div style="padding:20px 18px;display:flex-direction:column;align-items:center;justify-content:center;background:#FFFFFF;">
         
-        <div style="background:#fff;padding:12px;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,0.4);display:inline-block;border:3px solid #D4AF37;">
+        <div style="background:#fff;padding:12px;border-radius:16px;box-shadow:0 6px 20px rgba(0,71,171,0.12);display:inline-block;border:3px solid #FFB703;outline:1.5px solid #0047AB;">
           <div id="memberIdQrCanvas" style="display:block;"></div>
         </div>
 
-        <div style="font-size:.9rem;font-weight:800;color:#D4AF37;margin-top:12px;">
+        <div style="font-size:.95rem;font-weight:800;color:#0A2540;margin-top:14px;">
           ማንነትን ለማረጋገጥ ይህንን QR ኮድ በስልክ ስካን ያድርጉ
         </div>
-        <div style="font-size:.76rem;color:rgba(255,255,255,0.7);max-width:380px;margin-top:4px;line-height:1.5;">
+        <div style="font-size:.78rem;color:#64748B;max-width:380px;margin:4px auto 0;line-height:1.5;">
           ይህ ዲጂታል መታወቂያ የአጸደ ትጉሃን ሰንበት ትምህርት ቤት ቤተ ይትባረክ ቤተ-መጽሃፍት ንብረት ነው።
         </div>
       </div>
 
       <!-- Back Bottom -->
-      <div style="background:rgba(0,0,0,0.3);padding:8px 18px;border-top:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:center;font-size:.72rem;color:rgba(255,255,255,0.6);">
-        <span>የአባል መለያ፦ <?= e($idFormatted) ?></span>
-        <span style="font-family:monospace;color:#D4AF37;">BACK SIDE</span>
+      <div style="background:#F8FAFC;padding:10px 18px;border-top:1.5px solid #E2E8F0;display:flex;justify-content:space-between;align-items:center;font-size:.74rem;color:#64748B;font-weight:600;">
+        <span>የአባል መለያ ቁጥር</span>
+        <span style="font-weight:900;color:#0047AB;font-size:.82rem;"><?= e($idFormatted) ?></span>
       </div>
     </div>
 
@@ -386,126 +395,181 @@ include __DIR__ . '/../includes/header.php';
     ctx.fillRect(0, 0, 1280, 420);
 
     // ─────────────────────────────────────────
-    // DRAW CARD 1: FRONT PASS (Left: 30 to 620)
+    // DRAW CARD 1: FRONT PASS (WHITE PROFESSIONAL) (Left: 30 to 620)
     // ─────────────────────────────────────────
-    var g1 = ctx.createLinearGradient(30, 20, 620, 400);
-    g1.addColorStop(0, '#0A1128');
-    g1.addColorStop(0.6, '#1C2541');
-    g1.addColorStop(1, '#27344F');
-    ctx.fillStyle = g1;
+    ctx.fillStyle = '#FFFFFF';
     roundRect(ctx, 30, 20, 590, 380, 18, true, false);
 
-    // Gold Border
-    ctx.strokeStyle = '#D4AF37';
+    // Border (Royal Blue)
+    ctx.strokeStyle = '#0047AB';
     ctx.lineWidth = 2.5;
     roundRect(ctx, 30, 20, 590, 380, 18, false, true);
 
-    // Front Header Bar
-    ctx.fillStyle = 'rgba(212,175,55,0.18)';
-    ctx.fillRect(32, 22, 586, 50);
-    ctx.fillStyle = '#D4AF37';
+    // Front Header Bar (Deep Blue)
+    ctx.fillStyle = '#0A2540';
+    ctx.fillRect(32, 22, 586, 56);
+
+    // Yellow Accent Stripe under Header
+    ctx.fillStyle = '#FFB703';
+    ctx.fillRect(32, 75, 586, 3.5);
+    
+    // Header Crest Icon (Yellow Circle)
+    ctx.fillStyle = '#FFB703';
+    ctx.beginPath();
+    ctx.arc(60, 50, 16, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 16px sans-serif';
-    ctx.fillText(libName, 50, 52);
+    ctx.fillText(libName, 88, 48);
 
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.font = '11px monospace';
-    ctx.fillText('MEMBER PASS · ' + memId, 450, 52);
+    ctx.fillStyle = '#FFE57F';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText('የአባልነት መታወቂያ ካርድ', 88, 66);
 
-    // Photo Box on Front
-    ctx.fillStyle = '#131D36';
-    ctx.fillRect(55, 95, 115, 135);
-    ctx.strokeStyle = '#D4AF37';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(55, 95, 115, 135);
+    // ID Badge on Header (Golden Yellow Badge with Blue Text)
+    ctx.fillStyle = '#FFB703';
+    roundRect(ctx, 490, 35, 110, 28, 14, true, false);
+    ctx.fillStyle = '#0A2540';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillText(memId, 505, 54);
+
+    // Photo Box on Front (Royal Blue Frame with Yellow Accent)
+    ctx.fillStyle = '#F8FAFC';
+    ctx.fillRect(55, 105, 115, 135);
+    ctx.strokeStyle = '#0047AB';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(55, 105, 115, 135);
 
     var drawInfoAndFinish = function(userImg) {
       if (userImg) {
         try {
-          ctx.drawImage(userImg, 56, 96, 113, 133);
+          ctx.drawImage(userImg, 56, 106, 113, 133);
         } catch(e) {}
       } else {
-        ctx.fillStyle = 'rgba(212,175,55,0.4)';
+        ctx.fillStyle = '#94A3B8';
         ctx.font = 'bold 50px sans-serif';
-        ctx.fillText('👤', 85, 180);
+        ctx.fillText('👤', 85, 190);
       }
 
       // Member Text
-      ctx.fillStyle = 'rgba(212,175,55,0.85)';
+      ctx.fillStyle = '#D97706';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.fillText('ሙሉ ስም', 190, 120);
+
+      ctx.fillStyle = '#0A2540';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.fillText(memName, 190, 148);
+
+      ctx.fillStyle = '#64748B';
       ctx.font = 'bold 12px sans-serif';
-      ctx.fillText('የአባሉ ሙሉ ስም', 190, 115);
+      ctx.fillText('መለያ ቁጥር', 190, 185);
+      ctx.fillStyle = '#0047AB';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.fillText(memId, 190, 205);
 
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 24px sans-serif';
-      ctx.fillText(memName, 190, 145);
+      ctx.fillStyle = '#64748B';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillText('ክፍል ደረጃ', 350, 185);
+      ctx.fillStyle = '#1E293B';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.fillText(memClass || '—', 350, 205);
 
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '14px sans-serif';
-      ctx.fillText('መለያ ቁጥር፦ ' + memId, 190, 180);
-      ctx.fillText('ክፍል ደረጃ፦ ' + memClass, 190, 205);
-      ctx.fillText('ስልክ ቁጥር፦ ' + memPhone, 190, 230);
+      ctx.fillStyle = '#64748B';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillText('ስልክ ቁጥር', 190, 235);
+      ctx.fillStyle = '#1E293B';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.fillText(memPhone || '—', 190, 255);
 
       // Active Badge
-      ctx.fillStyle = '#22c55e';
-      ctx.fillRect(55, 240, 115, 24);
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = 'rgba(0,71,171,0.08)';
+      roundRect(ctx, 55, 250, 115, 24, 6, true, false);
+      ctx.strokeStyle = '#0047AB';
+      ctx.lineWidth = 1.5;
+      roundRect(ctx, 55, 250, 115, 24, 6, false, true);
+      ctx.fillStyle = '#0047AB';
       ctx.font = 'bold 11px sans-serif';
-      ctx.fillText('✓ ንቁ አባል', 82, 256);
+      ctx.fillText('✓ ንቁ አባል', 82, 266);
 
       // Front Footer
-      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      ctx.fillStyle = '#F8FAFC';
+      ctx.fillRect(32, 350, 586, 48);
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.strokeRect(32, 350, 586, 1);
+      ctx.fillStyle = '#64748B';
       ctx.font = '11px sans-serif';
-      ctx.fillText('ህጋዊና ዕውቅና ያለው የቤተ-መጻሕፍት መታወቂያ', 55, 380);
+      ctx.fillText('ህጋዊና ዕውቅና ያለው የቤተ-መጻሕፍት መታወቂያ', 55, 378);
+
+      ctx.fillStyle = '#0047AB';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillText(memId, 520, 378);
 
       // ─────────────────────────────────────────
-      // DRAW CARD 2: BACK PASS (Right: 660 to 1250)
+      // DRAW CARD 2: BACK PASS (WHITE PROFESSIONAL) (Right: 660 to 1250)
       // ─────────────────────────────────────────
-      var g2 = ctx.createLinearGradient(660, 20, 1250, 400);
-      g2.addColorStop(0, '#0A1128');
-      g2.addColorStop(0.6, '#1C2541');
-      g2.addColorStop(1, '#27344F');
-      ctx.fillStyle = g2;
+      ctx.fillStyle = '#FFFFFF';
       roundRect(ctx, 660, 20, 590, 380, 18, true, false);
 
-      ctx.strokeStyle = '#D4AF37';
+      ctx.strokeStyle = '#0047AB';
       ctx.lineWidth = 2.5;
       roundRect(ctx, 660, 20, 590, 380, 18, false, true);
 
       // Back Header Bar
-      ctx.fillStyle = 'rgba(212,175,55,0.18)';
-      ctx.fillRect(662, 22, 586, 50);
-      ctx.fillStyle = '#D4AF37';
+      ctx.fillStyle = '#0A2540';
+      ctx.fillRect(662, 22, 586, 56);
+
+      // Yellow Accent Stripe
+      ctx.fillStyle = '#FFB703';
+      ctx.fillRect(662, 75, 586, 3.5);
+
+      ctx.fillStyle = '#FFFFFF';
       ctx.font = 'bold 16px sans-serif';
-      ctx.fillText(libName, 685, 52);
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.font = '11px monospace';
-      ctx.fillText('VERIFY · BACK SIDE', 1080, 52);
+      ctx.fillText(libName, 690, 55);
+
+      ctx.fillStyle = '#FFB703';
+      roundRect(ctx, 1110, 35, 115, 28, 14, true, false);
+      ctx.fillStyle = '#0A2540';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillText('ማረጋገጫ QR', 1130, 54);
 
       // Grab QR Code from DOM
       var qrSource = qrContainer.querySelector('canvas') || qrContainer.querySelector('img');
       if (qrSource) {
         try {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(865, 95, 180, 180);
-          ctx.strokeStyle = '#D4AF37';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(865, 95, 180, 180);
-          ctx.drawImage(qrSource, 875, 105, 160, 160);
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(865, 100, 180, 180);
+          ctx.strokeStyle = '#FFB703';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(865, 100, 180, 180);
+          ctx.drawImage(qrSource, 875, 110, 160, 160);
         } catch(e) {
           console.error(e);
         }
       }
 
-      ctx.fillStyle = '#D4AF37';
+      ctx.fillStyle = '#0A2540';
       ctx.font = 'bold 14px sans-serif';
-      ctx.fillText('ማንነትን ለማረጋገጥ ይህንን QR ኮድ በስልክ ስካን ያድርጉ', 740, 305);
+      ctx.fillText('ማንነትን ለማረጋገጥ ይህንን QR ኮድ በስልክ ስካን ያድርጉ', 740, 310);
 
-      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillStyle = '#64748B';
       ctx.font = '12px sans-serif';
-      ctx.fillText('ይህ መታወቂያ የአጸደ ትጉሃን ሰንበት ትምህርት ቤት ቤተ ይትባረክ ቤተ-መጽሃፍት ንብረት ነው።', 710, 335);
+      ctx.fillText('ይህ ዲጂታል መታወቂያ የአጸደ ትጉሃን ሰንበት ትምህርት ቤት ቤተ ይትባረክ ቤተ-መጽሃፍት ንብረት ነው።', 700, 335);
+
+      // Back Footer
+      ctx.fillStyle = '#F8FAFC';
+      ctx.fillRect(662, 350, 586, 48);
+      ctx.fillStyle = '#64748B';
+      ctx.font = '11px sans-serif';
+      ctx.fillText('የአባል መለያ ቁጥር', 685, 378);
+
+      ctx.fillStyle = '#0047AB';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillText(memId, 1160, 378);
 
       // Trigger Download
       var link      = document.createElement('a');
-      link.download = 'Library_Pass_' + memId.replace('#', '') + '.png';
+      link.download = 'Library_Pass_' + memId.replace(/[^a-zA-Z0-9_-]/g, '_') + '.png';
       link.href     = fc.toDataURL('image/png');
       link.click();
     };

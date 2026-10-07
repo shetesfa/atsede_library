@@ -26,6 +26,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $memberRow = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM members WHERE user_id=" . (int)$user['id']));
     $memberId = (int)$memberRow['id'];
 
+    // Strict 1-book borrowing rule
+    $activeBorrows = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM borrow_records WHERE member_id=$memberId AND status='borrowed'"))['c'];
+    $pendingReqs = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM borrow_requests WHERE member_id=$memberId AND status='pending' AND book_id != $bookId"))['c'];
+    if ($activeBorrows >= 1 || $pendingReqs >= 1) {
+        flash('msg', 'የውሰት ደንብ፦ በአንድ ጊዜ ከአንድ መጽሐፍ በላይ መዋስ አይፈቀድም። እባክዎ አስቀድመው የወሰዱትን መጽሐፍ ይመልሱ ወይም ቀደም ሲል የላኩትን ጥያቄ ይጠብቁ።', 'danger');
+        redirect($_SERVER['REQUEST_URI']);
+    }
+
     $dupe = mysqli_query($conn, "SELECT id FROM borrow_requests WHERE member_id=$memberId AND book_id=$bookId AND status='pending'");
     if (mysqli_num_rows($dupe) > 0) {
         flash('msg', 'ለዚህ መጽሐፍ ቀደም ሲል ያስገቡት ጥያቄ በመጠባበቅ ላይ ነው።', 'warning');
@@ -74,7 +82,23 @@ if ($borrowFilter === 'yes') {
 }
 
 $whereSql = implode(' AND ', $where);
-$orderSql = $sort === 'new' ? 'b.created_at DESC' : 'b.title ASC';
+$orderSql = $sort === 'new' ? 'b.created_at DESC, b.id DESC' : 'b.title ASC';
+
+// Total matching count
+$countSql = "SELECT COUNT(DISTINCT b.id) AS total_count 
+             FROM books b
+             LEFT JOIN book_copies bc ON bc.book_id=b.id
+             WHERE $whereSql";
+$countStmt = mysqli_prepare($conn, $countSql);
+if ($params) mysqli_stmt_bind_param($countStmt, $types, ...$params);
+mysqli_stmt_execute($countStmt);
+$totalRecords = (int)mysqli_fetch_assoc(mysqli_stmt_get_result($countStmt))['total_count'];
+
+// Pagination
+$perPage = 48;
+$page = max(1, (int)($_GET['p'] ?? 1));
+$totalPages = max(1, ceil($totalRecords / $perPage));
+$offset = ($page - 1) * $perPage;
 
 $sql = "SELECT DISTINCT b.*, c.name AS category_name, c.icon AS category_icon, r.name AS room_name, s.name AS shelf_name,
         (SELECT COUNT(*) FROM book_copies bc2 WHERE bc2.book_id=b.id AND bc2.status='available') AS available_count,
@@ -84,10 +108,12 @@ $sql = "SELECT DISTINCT b.*, c.name AS category_name, c.icon AS category_icon, r
         LEFT JOIN rooms r ON r.id=b.room_id
         LEFT JOIN shelves s ON s.id=b.shelf_id
         LEFT JOIN book_copies bc ON bc.book_id=b.id
-        WHERE $whereSql ORDER BY $orderSql LIMIT 80";
+        WHERE $whereSql ORDER BY $orderSql LIMIT ? OFFSET ?";
 
 $stmt = mysqli_prepare($conn, $sql);
-if ($params) mysqli_stmt_bind_param($stmt, $types, ...$params);
+$mainTypes = $types . 'ii';
+$mainParams = array_merge($params, [$perPage, $offset]);
+mysqli_stmt_bind_param($stmt, $mainTypes, ...$mainParams);
 mysqli_stmt_execute($stmt);
 $results = mysqli_stmt_get_result($stmt);
 $resultCount = mysqli_num_rows($results);
@@ -133,11 +159,11 @@ include __DIR__ . '/includes/header.php';
   <button class="btn btn-navy btn-block mt-2"><i class="bi bi-search"></i> <?= __('search_btn') ?></button>
 </form>
 
-<div class="section-title" style="margin-top:0;">
-  <?= $resultCount ?> ውጤት<?= $resultCount === 1 ? '' : 'ዎች' ?> ተገኝቷል
+<div class="section-title d-flex justify-content-between align-items-center" style="margin-top:0;">
+  <span>ጠቅላላ <?= number_format($totalRecords) ?> ውጤቶች ተገኝተዋል<?= $totalPages > 1 ? " (ገጽ $page ከ $totalPages)" : '' ?></span>
 </div>
 
-<?php if ($resultCount === 0): ?>
+<?php if ($totalRecords === 0): ?>
   <div class="empty-state">
     <i class="bi bi-emoji-frown"></i>
     <h4><?= __('no_books_found') ?></h4>
@@ -148,6 +174,7 @@ include __DIR__ . '/includes/header.php';
     <?php while ($b = mysqli_fetch_assoc($results)): 
       $isBorrowable = is_book_borrowable($b) && $b['borrow_status'] !== 'restricted';
       $avail = (int)$b['available_count'];
+      $sAuth = (!empty(trim($b['author'] ?? '')) && strtolower($b['author']) !== 'unwritten' && $b['author'] !== 'ጸሃፊው አልተገለጸም') ? $b['author'] : 'ጸሃፊው አልተገለጸም';
     ?>
       <div class="col-6 col-sm-4 col-md-3 col-lg-2">
         <a href="<?= $base ?>book.php?id=<?= (int)$b['id'] ?>" class="book-card card-hover" style="text-decoration:none;display:flex;flex-direction:column;height:100%;">
@@ -157,7 +184,7 @@ include __DIR__ . '/includes/header.php';
           <div class="book-body" style="flex:1;display:flex;flex-direction:column;justify-content:space-between;">
             <div>
               <div class="book-title"><?= e($b['title']) ?></div>
-              <div class="book-author"><?= e($b['author']) ?></div>
+              <div class="book-author" style="<?= $sAuth === 'ጸሃፊው አልተገለጸም' ? 'font-style:italic;opacity:0.8;' : '' ?>"><?= e($sAuth) ?></div>
               <div class="text-muted" style="font-size:.7rem;margin-bottom:4px;"><?= e($b['category_name']) ?></div>
             </div>
             
@@ -179,6 +206,33 @@ include __DIR__ . '/includes/header.php';
       </div>
     <?php endwhile; ?>
   </div>
+
+  <!-- Pagination links -->
+  <?php if ($totalPages > 1): 
+    $pParams = $_GET;
+  ?>
+    <div class="d-flex justify-content-between align-items-center mt-3 mb-3">
+      <div class="text-muted" style="font-size:.82rem;">
+        ገጽ <?= $page ?> ከ <?= $totalPages ?> (ጠቅላላ <?= $totalRecords ?> መጻሕፍት)
+      </div>
+      <div class="d-flex gap-1">
+        <?php if ($page > 1): 
+          $pParams['p'] = $page - 1;
+        ?>
+          <a href="?<?= http_build_query($pParams) ?>" class="btn btn-outline btn-sm">
+            <i class="bi bi-chevron-left"></i> ቀዳሚ
+          </a>
+        <?php endif; ?>
+        <?php if ($page < $totalPages): 
+          $pParams['p'] = $page + 1;
+        ?>
+          <a href="?<?= http_build_query($pParams) ?>" class="btn btn-navy btn-sm">
+            ቀጣይ <i class="bi bi-chevron-right"></i>
+          </a>
+        <?php endif; ?>
+      </div>
+    </div>
+  <?php endif; ?>
 <?php endif; ?>
 
 <?php include __DIR__ . '/includes/footer.php'; ?>

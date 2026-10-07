@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/notifier.php';
 require_once __DIR__ . '/../includes/nav_config.php';
 require_role('admin');
 
@@ -16,14 +17,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash('msg', 'አርእስት እና መልዕክት ያስፈልጋሉ።', 'danger');
     } else {
         if ($target === 'all') {
-            notify_broadcast($conn, $title, $message, 'general');
+            // 1. Single in-app broadcast entry
+            $stmt = mysqli_prepare($conn, "INSERT INTO notifications (user_id, title, message, type) VALUES (NULL, ?, ?, 'general')");
+            mysqli_stmt_bind_param($stmt, 'ss', $title, $message);
+            mysqli_stmt_execute($stmt);
+            $notifId = mysqli_insert_id($conn);
+            mysqli_stmt_close($stmt);
+
+            // 2. Web push broadcast
+            send_push_to_user($conn, null, $title, $message);
+
+            // 3. Telegram broadcast to all verified members
+            $cleanTitle = htmlspecialchars($title, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $cleanMsg   = htmlspecialchars($message, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $tgText = "📢 <b>" . $cleanTitle . "</b>\n\n" . $cleanMsg;
+            telegram_broadcast($conn, $tgText);
+
             audit($conn, $user['id'], 'notification_broadcast', $title);
-            flash('msg', 'ማሳወቂያ ለሁሉም አባላት ተልኳል።', 'success');
+            flash('msg', 'ማሳወቂያ ለሁሉም አባላት በዌብ፣ በፑሽ እና በቴሌግራም ተልኳል።', 'success');
         } else {
             $memberUserId = (int)$target;
-            notify($conn, $memberUserId, $title, $message, 'general');
+            // Send unified multi-channel notification without duplication
+            notify_user($conn, $memberUserId, $title, $message, 'general', null, ['inapp', 'push', 'telegram']);
             audit($conn, $user['id'], 'notification_direct', "to:$memberUserId title:$title");
-            flash('msg', 'ማሳወቂያ ተልኳል።', 'success');
+            flash('msg', 'ማሳወቂያ ለአባሉ በስኬት ተልኳል።', 'success');
         }
     }
     redirect('notifications.php');

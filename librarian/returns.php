@@ -30,11 +30,11 @@ $q = clean($_GET['q'] ?? '');
 $where = "br.status='borrowed'";
 if ($q !== '') {
     $like = mysqli_real_escape_string($conn, $q);
-    $where .= " AND (b.title LIKE '%$like%' OR u.full_name LIKE '%$like%' OR bc.copy_code LIKE '%$like%')";
+    $where .= " AND (b.title LIKE '%$like%' OR u.full_name LIKE '%$like%' OR bc.copy_code LIKE '%$like%' OR m.student_id LIKE '%$like%')";
 }
 
 $records = mysqli_query($conn, "
-  SELECT br.*, b.title, b.author, bc.copy_code, u.full_name, u.phone FROM borrow_records br
+  SELECT br.*, b.title, b.author, bc.copy_code, u.full_name, u.phone, m.student_id FROM borrow_records br
   JOIN books b ON b.id=br.book_id JOIN book_copies bc ON bc.id=br.book_copy_id
   JOIN members m ON m.id=br.member_id JOIN users u ON u.id=m.user_id
   WHERE $where ORDER BY br.due_date ASC");
@@ -45,7 +45,7 @@ include __DIR__ . '/../includes/header.php';
 ?>
 
 <form method="get" class="card card-pad mb-3">
-  <div class="input-group"><i class="bi bi-search"></i><input class="input" name="q" value="<?= e($q) ?>" placeholder="በመጽሐፍ፣ በአባል ወይም በኮድ ይፈልጉ…"></div>
+  <div class="input-group"><i class="bi bi-search"></i><input class="input" name="q" value="<?= e($q) ?>" placeholder="በመታወቂያ (አጸደቤይ01)፣ በመጽሐፍ፣ በአባል ወይም በኮድ ይፈልጉ…"></div>
 </form>
 
 <div class="section-title" style="margin-top:0;">በስራ ላይ ያሉ ውሶች</div>
@@ -57,7 +57,12 @@ include __DIR__ . '/../includes/header.php';
     <div style="display:flex;justify-content:space-between;gap:10px;">
       <div>
         <strong><?= e($r['title']) ?></strong> <span class="shelf-tag"><?= e($r['copy_code']) ?></span><br>
-        <span class="text-muted" style="font-size:.8rem;"><i class="bi bi-person"></i> <?= e($r['full_name']) ?> · <?= e($r['phone']) ?></span>
+        <span class="text-muted" style="font-size:.8rem;">
+          <?php if (!empty($r['student_id'])): ?>
+            <span class="badge" style="background:#0047AB;color:#FFB703;font-weight:900;font-size:.78rem;padding:2px 8px;border-radius:10px;margin-right:4px;"><?= e($r['student_id']) ?></span>
+          <?php endif; ?>
+          <i class="bi bi-person"></i> <?= e($r['full_name']) ?> · <?= e($r['phone']) ?>
+        </span>
       </div>
       <span class="badge <?= $isOverdue ? 'badge-danger' : 'badge-success' ?>">የመመለሻ <?= formatDate($r['due_date']) ?></span>
     </div>
