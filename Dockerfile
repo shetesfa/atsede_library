@@ -1,18 +1,10 @@
 FROM php:8.2-apache
 
-# Install system dependencies & PHP extensions
-RUN apt-get update && apt-get install -y \
-    libpng-dev \
-    libjpeg-dev \
-    libfreetype6-dev \
-    libzip-dev \
-    libgmp-dev \
-    zip \
-    unzip \
-    curl \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) mysqli pdo_mysql gd gmp zip opcache \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Install official lightweight PHP extension installer (avoids compilation race conditions & high RAM)
+ADD --chmod=0755 https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
+
+# Install required extensions cleanly
+RUN install-php-extensions mysqli pdo_mysql gd zip
 
 # Enable Apache mod_rewrite & headers
 RUN a2enmod rewrite headers
