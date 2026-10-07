@@ -32,7 +32,7 @@ CREATE TABLE `audit_logs` (
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
   CONSTRAINT `audit_logs_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=38 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -41,7 +41,6 @@ CREATE TABLE `audit_logs` (
 
 LOCK TABLES `audit_logs` WRITE;
 /*!40000 ALTER TABLE `audit_logs` DISABLE KEYS */;
-INSERT INTO `audit_logs` VALUES (1,1,'login','','::1','2026-06-24 23:07:51'),(2,1,'librarian_added','user_id:2','::1','2026-06-24 23:39:19'),(3,1,'logout','','::1','2026-06-24 23:39:25'),(4,2,'login','','::1','2026-06-24 23:39:53'),(5,2,'logout','','::1','2026-06-24 23:44:44'),(6,NULL,'member_registered','','::1','2026-06-24 23:47:35'),(7,1,'login','','::1','2026-06-24 23:47:51'),(8,1,'member_status_active','user_id:3','::1','2026-06-24 23:48:57'),(9,1,'logout','','::1','2026-06-24 23:49:02'),(10,NULL,'login','','::1','2026-06-24 23:49:14'),(11,NULL,'borrow_request_created','book_id:97 type:reserve','::1','2026-06-24 23:52:12'),(12,NULL,'logout','','::1','2026-06-25 00:23:10'),(13,1,'login','','::1','2026-06-25 00:24:58'),(14,1,'logout','','::1','2026-06-25 01:32:58'),(15,1,'logout','','::1','2026-10-02 05:04:19'),(16,1,'login','','::1','2026-10-02 05:09:27'),(17,1,'settings_updated','Updated library and payment rules','::1','2026-10-02 06:02:25'),(18,5,'member_registered','telegram:shetesfa','::1','2026-10-04 14:29:29'),(19,1,'login','','::1','2026-10-04 14:33:23'),(20,1,'member_status_active','user_id:5','::1','2026-10-04 14:33:40'),(21,1,'suggestion_rejected','suggestion_id:1','::1','2026-10-04 15:01:09'),(22,5,'login','','::1','2026-10-04 15:02:58'),(23,1,'notification_direct','to:5 title:test iur topi','::1','2026-10-04 15:03:31'),(24,5,'borrow_request_created','book_id:41 type:reserve','::1','2026-10-04 15:19:00'),(25,1,'settings_updated','Updated library, Telegram and fine rules','::1','2026-10-05 00:35:40'),(26,5,'login','','::1','2026-10-05 12:58:58'),(27,5,'logout','','::1','2026-10-05 12:59:10'),(28,1,'login','','::1','2026-10-05 12:59:26'),(29,5,'login','','::1','2026-10-05 20:09:33'),(30,NULL,'membership_payment_recorded','payment_id:1 member_id:4 month:2026-01 amount:50','','2026-10-05 20:29:53'),(31,NULL,'membership_payment_recorded','payment_id:2 member_id:4 month:2026-02 amount:100','','2026-10-05 20:29:54'),(32,NULL,'membership_payment_recorded','payment_id:3 member_id:4 month:2026-03 amount:49','','2026-10-05 20:29:54'),(33,NULL,'membership_payment_recorded','payment_id:4 member_id:4 month:2026-10 amount:50','','2026-10-05 20:29:55'),(34,NULL,'membership_payment_recorded','payment_id:5 member_id:4 month:2026-05 amount:75','','2026-10-05 20:29:55'),(35,2,'login','','::1','2026-10-07 04:32:03'),(36,2,'login','','10.217.130.224','2026-10-07 04:43:03'),(37,2,'logout','','10.217.130.224','2026-10-07 05:20:41');
 /*!40000 ALTER TABLE `audit_logs` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -128,7 +127,7 @@ CREATE TABLE `book_suggestions` (
   PRIMARY KEY (`id`),
   KEY `member_id` (`member_id`),
   CONSTRAINT `book_suggestions_ibfk_1` FOREIGN KEY (`member_id`) REFERENCES `members` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -137,7 +136,6 @@ CREATE TABLE `book_suggestions` (
 
 LOCK TABLES `book_suggestions` WRITE;
 /*!40000 ALTER TABLE `book_suggestions` DISABLE KEYS */;
-INSERT INTO `book_suggestions` VALUES (1,NULL,'ተስፋ','0943854325','ልጅነት','ዘረበ ወላ','ots good',1,'rejected','2026-06-25 02:27:38','2026-10-04 15:01:09');
 /*!40000 ALTER TABLE `book_suggestions` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -404,7 +402,7 @@ CREATE TABLE `login_attempts` (
   PRIMARY KEY (`id`),
   KEY `idx_ident_time` (`identifier`,`attempt_time`),
   KEY `idx_ip_time` (`ip_address`,`attempt_time`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -589,7 +587,7 @@ CREATE TABLE `notifications` (
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
   CONSTRAINT `notifications_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=13 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -598,7 +596,6 @@ CREATE TABLE `notifications` (
 
 LOCK TABLES `notifications` WRITE;
 /*!40000 ALTER TABLE `notifications` DISABLE KEYS */;
-INSERT INTO `notifications` VALUES (2,5,'እንኳን ወደ ቤተ መጻሕፍት በደህና መጡ','የአባልነት ጥያቄዎ ጸድቷል። አሁን መጻሕፍትን መዋስ ይችላሉ።','registration_approved','member/dashboard.php',1,'2026-10-04 14:33:40'),(3,5,'test iur topi','hi bro','general',NULL,1,'2026-10-04 15:03:30');
 /*!40000 ALTER TABLE `notifications` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -910,4 +907,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-10-07  5:55:43
+-- Dump completed on 2026-10-07  6:00:21
