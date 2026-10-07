@@ -18,6 +18,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         mysqli_query($conn, "UPDATE users SET status='suspended' WHERE id=$userId AND role='member'");
         mysqli_query($conn, "UPDATE members SET blocked_until='$until' WHERE user_id=$userId");
         notify($conn, $userId, 'መለያዎ ታግዷል', "ለ $days ቀናት መግባት እና መዋስ ተከለከለ። እስከ " . formatDate($until) . " ድረስ።", 'general', 'login.php');
+        
+        $uRow = mysqli_fetch_assoc(mysqli_query($conn, "SELECT full_name, telegram_chat_id FROM users WHERE id=$userId"));
+        if ($uRow && $uRow['telegram_chat_id']) {
+            $blockMsg = "🚫 <b>ሰላም፣ " . htmlspecialchars($uRow['full_name']) . "</b>\n\n" .
+                        "የቤተ-መጻሕፍት መለያዎ ለ $days ቀናት ታግዷል። እስከ " . formatDate($until) . " ድረስ መዋስ አይችሉም።";
+            telegram_send($conn, $uRow['telegram_chat_id'], $blockMsg);
+        }
+
         audit($conn, $user['id'], 'member_blocked', "user_id:$userId days:$days until:$until");
         flash('msg', "አባሉ ለ $days ቀናት ታግዷል።", 'success');
     } elseif (in_array($decision, ['active','rejected','suspended'])) {
@@ -25,9 +33,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($decision === 'active') {
             mysqli_query($conn, "UPDATE members SET blocked_until=NULL WHERE user_id=$userId");
             notify($conn, $userId, 'እንኳን ወደ ቤተ መጻሕፍት በደህና መጡ', 'የአባልነት ጥያቄዎ ጸድቷል። አሁን መጻሕፍትን መዋስ ይችላሉ።', 'registration_approved', 'member/dashboard.php');
-        }
-        if ($decision === 'active' || $decision === 'rejected') {
+            
+            $uRow = mysqli_fetch_assoc(mysqli_query($conn, "SELECT full_name, telegram_chat_id FROM users WHERE id=$userId"));
+            if ($uRow && $uRow['telegram_chat_id']) {
+                $approveMsg = "🎉 <b>እንኳን ደስ አለዎት፣ " . htmlspecialchars($uRow['full_name']) . "!</b>\n\n" .
+                              "✅ <b>የአባልነት ጥያቄዎ በአስተዳዳሪ ጸድቋል!</b>\n\n" .
+                              "አሁን በመተግበሪያው ወይም በዚህ ቦት አማካኝነት መጻሕፍትን መፈለግ እና መዋስ ይችላሉ።\n\n" .
+                              "📌 አገልግሎቱን ለመጀመር ከታች ያሉትን አዝራሮች ይጠቀሙ ወይም /start ይጫኑ።";
+                telegram_send($conn, $uRow['telegram_chat_id'], $approveMsg, get_bot_main_keyboard());
+            }
+        } elseif ($decision === 'rejected') {
             mysqli_query($conn, "UPDATE members SET blocked_until=NULL WHERE user_id=$userId");
+            $uRow = mysqli_fetch_assoc(mysqli_query($conn, "SELECT full_name, telegram_chat_id FROM users WHERE id=$userId"));
+            if ($uRow && $uRow['telegram_chat_id']) {
+                $rejectMsg = "❌ <b>ሰላም፣ " . htmlspecialchars($uRow['full_name']) . "</b>\n\n" .
+                             "የአባልነት ምዝገባ ጥያቄዎ ተቀባይነት አላገኘም። ለተጨማሪ መረጃ ቤተ-መጻሕፍቱን በአካል ያነጋግሩ።";
+                telegram_send($conn, $uRow['telegram_chat_id'], $rejectMsg, ['remove_keyboard' => true]);
+            }
+        } elseif ($decision === 'suspended') {
+            $uRow = mysqli_fetch_assoc(mysqli_query($conn, "SELECT full_name, telegram_chat_id FROM users WHERE id=$userId"));
+            if ($uRow && $uRow['telegram_chat_id']) {
+                $blockMsg = "🚫 <b>ሰላም፣ " . htmlspecialchars($uRow['full_name']) . "</b>\n\n" .
+                            "የቤተ-መጻሕፍት መለያዎ ለጊዜው ታግዷል። ለተጨማሪ መረጃ ቤተ-መጻሕፍቱን ያነጋግሩ።";
+                telegram_send($conn, $uRow['telegram_chat_id'], $blockMsg);
+            }
         }
         audit($conn, $user['id'], 'member_status_' . $decision, "user_id:$userId");
         flash('msg', 'የአባል ሁኔታ ዘምኗል።', 'success');

@@ -4,177 +4,255 @@ require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/nav_config.php';
 require_role('admin');
 
-$statusBreakdown = mysqli_query($conn, "SELECT borrow_status, COUNT(*) c FROM books GROUP BY borrow_status");
-$statusData = ['available'=>0,'restricted'=>0,'reference'=>0,'archived'=>0];
-while ($r = mysqli_fetch_assoc($statusBreakdown)) $statusData[$r['borrow_status']] = (int)$r['c'];
-$totalBooks = array_sum($statusData);
+$tab = clean($_GET['tab'] ?? 'summary');
+$currentMonth = current_billing_month();
+$minMonthly = get_minimum_monthly_payment($conn);
 
-$topBooks = mysqli_query($conn, "
-  SELECT b.title, COUNT(*) borrows FROM borrow_records br JOIN books b ON b.id=br.book_id
-  GROUP BY br.book_id ORDER BY borrows DESC LIMIT 10");
+// Key Stats
+$totalMembers = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM users WHERE role='member'"))['c'];
+$activeMembers = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM users WHERE role='member' AND status='active'"))['c'];
 
-$monthly = mysqli_query($conn, "
-  SELECT DATE_FORMAT(borrowed_at, '%b %y') label, COUNT(*) c FROM borrow_records
-  WHERE borrowed_at >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-  GROUP BY DATE_FORMAT(borrowed_at, '%Y-%m') ORDER BY DATE_FORMAT(borrowed_at, '%Y-%m') ASC");
-$monthLabels = []; $monthCounts = [];
-$totalBorrows6m = 0;
-while ($r = mysqli_fetch_assoc($monthly)) {
-    $monthLabels[] = $r['label'];
-    $monthCounts[] = (int)$r['c'];
-    $totalBorrows6m += (int)$r['c'];
+$totalBooks = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM books WHERE borrow_status != 'archived'"))['c'];
+$totalCopies = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM book_copies"))['c'];
+$availableCopies = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM book_copies WHERE status='available'"))['c'];
+$activeLoans = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM borrow_records WHERE status='borrowed'"))['c'];
+$overdueLoans = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM borrow_records WHERE status='borrowed' AND due_date < CURDATE()"))['c'];
+
+$nonBorrowableBooks = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM books WHERE is_borrowable=0 OR borrow_status='restricted'"))['c'];
+$totalPaymentsSum = (float)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(amount), 0) s FROM membership_payments"))['s'];
+$currentMonthPaymentsSum = (float)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(amount), 0) s FROM membership_payments WHERE payment_month='$currentMonth'"))['s'];
+
+// Unpaid members calculation for current month
+$activeMembersList = mysqli_query($conn, "SELECT m.id, u.full_name, u.phone, m.class, m.student_id FROM members m JOIN users u ON u.id=m.user_id WHERE u.status='active'");
+$unpaidCount = 0;
+$unpaidMembersData = [];
+while ($m = mysqli_fetch_assoc($activeMembersList)) {
+    $st = get_member_payment_status($conn, $m['id'], $currentMonth);
+    if (!$st['is_paid']) {
+        $unpaidCount++;
+        $m['paid'] = $st['amount_paid'];
+        $unpaidMembersData[] = $m;
+    }
 }
 
-$categoryBreakdown = mysqli_query($conn, "SELECT c.name, COUNT(*) c FROM books b JOIN categories c ON c.id=b.category_id GROUP BY c.id ORDER BY c DESC");
-$catLabels = []; $catCounts = [];
-while ($r = mysqli_fetch_assoc($categoryBreakdown)) { $catLabels[] = $r['name']; $catCounts[] = (int)$r['c']; }
+// Top borrowed books
+$topBooks = mysqli_query($conn, "
+    SELECT b.title, b.author, COUNT(br.id) AS borrow_count
+    FROM borrow_records br
+    JOIN books b ON b.id = br.book_id
+    GROUP BY br.book_id
+    ORDER BY borrow_count DESC
+    LIMIT 10
+");
 
-$registeredBooks = mysqli_query($conn, "
-  SELECT b.title, b.author, c.name AS category_name, b.created_at,
-    (SELECT COUNT(*) FROM book_copies WHERE book_id=b.id) AS copies
-  FROM books b LEFT JOIN categories c ON c.id=b.category_id
-  ORDER BY b.created_at DESC LIMIT 100");
+// Overdue details
+$overdueList = mysqli_query($conn, "
+    SELECT br.*, b.title, bc.copy_code, u.full_name, u.phone, DATEDIFF(CURDATE(), br.due_date) AS days_overdue
+    FROM borrow_records br
+    JOIN books b ON b.id = br.book_id
+    JOIN book_copies bc ON bc.id = br.book_copy_id
+    JOIN members m ON m.id = br.member_id
+    JOIN users u ON u.id = m.user_id
+    WHERE br.status = 'borrowed' AND br.due_date < CURDATE()
+    ORDER BY br.due_date ASC
+");
 
-$recentRegistrations = mysqli_query($conn, "
-  SELECT DATE(created_at) d, COUNT(*) c FROM books
-  WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-  GROUP BY DATE(created_at) ORDER BY d DESC LIMIT 30");
-
-$totalMembers = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM users WHERE role='member' AND status='active'"))['c'];
-$pendingRequests = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM borrow_requests WHERE status='pending'"))['c'];
-$activeLoans = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) c FROM borrow_records WHERE status='borrowed'"))['c'];
+// Audit logs
+$auditLogs = mysqli_query($conn, "
+    SELECT a.*, u.full_name, u.role
+    FROM audit_logs a
+    LEFT JOIN users u ON u.id = a.user_id
+    ORDER BY a.created_at DESC
+    LIMIT 50
+");
 
 $pageTitle = __('reports');
 $activeKey = 'reports';
 include __DIR__ . '/../includes/header.php';
 ?>
 
-<div class="print-header">
-  <?php if ($logoUrl): ?><img src="<?= e($logoUrl) ?>" alt=""><?php else: ?><span class="crest" style="background:radial-gradient(circle at 30% 30%,var(--gold),var(--gold-600));border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--navy);"><i class="bi bi-book-half"></i></span><?php endif; ?>
-  <div>
-    <div style="font-family:var(--font-display);font-weight:700;font-size:1.1rem;color:var(--navy);"><?= e($siteName) ?></div>
-    <div class="text-muted" style="font-size:.8rem;">ሪፖርት የተዘጋጀበት ቀን፦ <?= formatDate(date('Y-m-d')) ?></div>
+<div class="no-print d-flex justify-content-between align-items-center mb-3">
+  <div class="section-title" style="margin:0;"><?= __('reports') ?></div>
+  <button class="btn btn-outline btn-sm" onclick="window.print()">
+    <i class="bi bi-printer"></i> ሪፖርት አትም
+  </button>
+</div>
+
+<!-- Tabs for report categories -->
+<div class="no-print d-flex gap-2 mb-3 overflow-x-auto">
+  <a href="?tab=summary" class="btn <?= $tab==='summary'?'btn-navy':'btn-outline' ?> btn-sm">ማጠቃለያ</a>
+  <a href="?tab=payments" class="btn <?= $tab==='payments'?'btn-navy':'btn-outline' ?> btn-sm">የክፍያ ሪፖርት</a>
+  <a href="?tab=loans" class="btn <?= $tab==='loans'?'btn-navy':'btn-outline' ?> btn-sm">የውሰትና ተመላሽ</a>
+  <a href="?tab=overdue" class="btn <?= $tab==='overdue'?'btn-navy':'btn-outline' ?> btn-sm">ጊዜያቸው ያለፈ (<?= $overdueLoans ?>)</a>
+  <a href="?tab=audit" class="btn <?= $tab==='audit'?'btn-navy':'btn-outline' ?> btn-sm">የኦዲት መዝገብ</a>
+</div>
+
+<?php if ($tab === 'summary'): ?>
+  <!-- 1. General Summary Dashboard -->
+  <div class="row g-2 mb-3">
+    <div class="col-6 col-md-3">
+      <div class="stat-card gold">
+        <div class="num"><?= $totalBooks ?></div>
+        <div class="lbl">ጠቅላላ መጻሕፍት (<?= $totalCopies ?> ቅጂዎች)</div>
+        <i class="bi bi-book"></i>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="stat-card">
+        <div class="num"><?= $activeMembers ?></div>
+        <div class="lbl">ንቁ አባላት (ጠቅላላ <?= $totalMembers ?>)</div>
+        <i class="bi bi-people"></i>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="stat-card outline" style="<?= $unpaidCount > 0 ? 'border-color:var(--danger);' : '' ?>">
+        <div class="num" style="<?= $unpaidCount > 0 ? 'color:var(--danger);' : '' ?>"><?= $unpaidCount ?></div>
+        <div class="lbl">የዚህ ወር ያልከፈሉ አባላት</div>
+        <i class="bi bi-exclamation-triangle"></i>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="stat-card outline">
+        <div class="num"><?= $activeLoans ?></div>
+        <div class="lbl">በውሰት ላይ ያሉ መጻሕፍት</div>
+        <i class="bi bi-journal-arrow-up"></i>
+      </div>
+    </div>
   </div>
-</div>
 
-<div class="no-print" style="display:flex;justify-content:flex-end;margin-bottom:10px;">
-  <button class="btn btn-outline btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> ሪፖርት አትም</button>
-</div>
+  <div class="section-title">በብዛት የተወሰዱ 10 መጻሕፍት</div>
+  <div class="table-wrap mb-3">
+    <table class="app-table app-stack">
+      <thead><tr><th>መጽሐፍ</th><th>ደራሲ</th><th>የተወሰደበት ብዛት</th></tr></thead>
+      <tbody>
+        <?php while ($tb = mysqli_fetch_assoc($topBooks)): ?>
+          <tr>
+            <td data-label="መጽሐፍ"><strong><?= e($tb['title']) ?></strong></td>
+            <td data-label="ደራሲ"><?= e($tb['author']) ?></td>
+            <td data-label="የተወሰደበት"><span class="badge badge-gold"><?= (int)$tb['borrow_count'] ?> ጊዜ</span></td>
+          </tr>
+        <?php endwhile; ?>
+      </tbody>
+    </table>
+  </div>
 
-<div class="section-title" style="margin-top:0;">የማጠቃለያ ሪፖርት (ጽሁፍ)</div>
-<div class="card card-pad mb-3" style="font-size:.88rem;line-height:1.75;">
-  <p><strong>ጠቅላላ መጻሕፍት፦</strong> <?= $totalBooks ?> — ከእነዚህ <?= $statusData['available'] ?> ይገኛሉ፣ <?= $statusData['restricted'] ?> ለውሰት ያልተፈቀዱ፣ <?= $statusData['reference'] ?> ለንባብ ብቻ፣ <?= $statusData['archived'] ?> በማህደር።</p>
-  <p><strong>ንቁ አባላት፦</strong> <?= $totalMembers ?> · <strong>በመጠባበቅ ላይ ያሉ ጥያቄዎች፦</strong> <?= $pendingRequests ?> · <strong>አሁን በውሰት ላይ፦</strong> <?= $activeLoans ?> መጽሐፍት።</p>
-  <p><strong>ባለፉት 6 ወራት ጠቅላላ ውሶች፦</strong> <?= $totalBorrows6m ?><?php if ($monthLabels): ?> — <?php
-    $parts = [];
-    foreach ($monthLabels as $i => $lbl) $parts[] = "$lbl: {$monthCounts[$i]}";
-    echo implode(' · ', $parts);
-  ?><?php endif; ?>.</p>
-  <?php if ($catLabels): ?>
-  <p><strong>መጻሕፍት በምድብ፦</strong> <?php
-    $parts = [];
-    foreach ($catLabels as $i => $lbl) $parts[] = "$lbl ({$catCounts[$i]})";
-    echo implode(' · ', $parts);
-  ?>.</p>
+<?php elseif ($tab === 'payments'): ?>
+  <!-- 2. Payments Breakdown -->
+  <div class="row g-2 mb-3">
+    <div class="col-6 col-md-4">
+      <div class="stat-card gold">
+        <div class="num"><?= number_format($currentMonthPaymentsSum, 2) ?> ብር</div>
+        <div class="lbl">የ<?= format_billing_month_amharic($currentMonth) ?> ገቢ</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-4">
+      <div class="stat-card">
+        <div class="num"><?= number_format($totalPaymentsSum, 2) ?> ብር</div>
+        <div class="lbl">የሁሉም ጊዜ ጠቅላላ ገቢ</div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="stat-card outline" style="<?= $unpaidCount > 0 ? 'border-color:var(--danger);' : '' ?>">
+        <div class="num" style="<?= $unpaidCount > 0 ? 'color:var(--danger);' : '' ?>"><?= $unpaidCount ?></div>
+        <div class="lbl">ያልከፈሉ አባላት ብዛት</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">የ<?= format_billing_month_amharic($currentMonth) ?> ክፍያ ያልከፈሉ አባላት ዝርዝር</div>
+  <div class="table-wrap">
+    <table class="app-table app-stack">
+      <thead>
+        <tr>
+          <th>አባል</th>
+          <th>ስልክ</th>
+          <th>ክፍል / መታወቂያ</th>
+          <th>የተከፈለ መጠን</th>
+          <th>የጎደለ</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php foreach ($unpaidMembersData as $unp): ?>
+          <tr>
+            <td data-label="አባል"><strong><?= e($unp['full_name']) ?></strong></td>
+            <td data-label="ስልክ"><a href="tel:<?= e($unp['phone']) ?>"><?= e($unp['phone']) ?></a></td>
+            <td data-label="ክፍል"><?= e($unp['class'] ?: '—') ?></td>
+            <td data-label="የተከፈለ"><span class="badge badge-danger"><?= number_format($unp['paid'], 2) ?> ብር</span></td>
+            <td data-label="የጎደለ"><?= number_format(max(0, $minMonthly - $unp['paid']), 2) ?> ብር</td>
+          </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+
+<?php elseif ($tab === 'overdue'): ?>
+  <!-- 3. Overdue Loans -->
+  <div class="section-title" style="color:var(--danger);">የመመለሻ ቀናቸው ያለፈ መጻሕፍት (<?= $overdueLoans ?>)</div>
+  <?php if (mysqli_num_rows($overdueList) === 0): ?>
+    <div class="empty-state">
+      <i class="bi bi-check-circle-fill text-success" style="font-size:2.5rem;"></i>
+      <h4>ጊዜው ያለፈበት ምንም መጽሐፍ የለም!</h4>
+    </div>
+  <?php else: ?>
+    <div class="table-wrap">
+      <table class="app-table app-stack">
+        <thead>
+          <tr>
+            <th>መጽሐፍ</th>
+            <th>ቅጂ ኮድ</th>
+            <th>አባል</th>
+            <th>ስልክ</th>
+            <th>የመመለሻ ቀን</th>
+            <th>ያለፈው ቀናት</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php while ($ol = mysqli_fetch_assoc($overdueList)): ?>
+            <tr>
+              <td data-label="መጽሐፍ"><strong><?= e($ol['title']) ?></strong></td>
+              <td data-label="ኮድ"><span class="shelf-tag"><?= e($ol['copy_code']) ?></span></td>
+              <td data-label="አባል"><?= e($ol['full_name']) ?></td>
+              <td data-label="ስልክ"><a href="tel:<?= e($ol['phone']) ?>"><?= e($ol['phone']) ?></a></td>
+              <td data-label="የመመለሻ ቀን"><?= formatDate($ol['due_date']) ?></td>
+              <td data-label="ያለፈው"><span class="badge badge-danger"><?= (int)$ol['days_overdue'] ?> ቀናት</span></td>
+            </tr>
+          <?php endwhile; ?>
+        </tbody>
+      </table>
+    </div>
   <?php endif; ?>
-</div>
 
-<div class="section-title">የመጻሕፍት ምዝገባ (ቀን እና ጊዜ)</div>
-<div class="table-wrap mb-3">
-  <table class="app-table app-stack">
-    <thead><tr><th>የመጽሐፍ ስም</th><th>ደራሲ</th><th>ምድብ</th><th>ቅጂዎች</th><th>የተመዘገበበት</th></tr></thead>
-    <tbody>
-      <?php if (mysqli_num_rows($registeredBooks) === 0): ?>
-        <tr><td colspan="5"><div class="empty-state"><i class="bi bi-journal"></i><h4>እስካሁን መጽሐፍ አልተመዘገበም</h4></div></td></tr>
-      <?php endif; ?>
-      <?php while ($rb = mysqli_fetch_assoc($registeredBooks)): ?>
-      <tr>
-        <td data-label="ስም"><?= e($rb['title']) ?></td>
-        <td data-label="ደራሲ"><?= e($rb['author']) ?></td>
-        <td data-label="ምድብ"><?= e($rb['category_name'] ?: '—') ?></td>
-        <td data-label="ቅጂዎች"><?= (int)$rb['copies'] ?></td>
-        <td data-label="ተመዝግቦ"><?= formatDate($rb['created_at']) ?> · <?= date('H:i', strtotime($rb['created_at'])) ?></td>
-      </tr>
-      <?php endwhile; ?>
-    </tbody>
-  </table>
-</div>
+<?php elseif ($tab === 'audit'): ?>
+  <!-- 4. Audit Log -->
+  <div class="section-title">የቅርብ ጊዜ የሲስተም ኦዲት መዝገብ</div>
+  <div class="table-wrap">
+    <table class="app-table app-stack">
+      <thead>
+        <tr>
+          <th>ተጠቃሚ</th>
+          <th>ድርጊት</th>
+          <th>ዝርዝር</th>
+          <th>ቀንና ሰዓት</th>
+          <th>IP</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php while ($al = mysqli_fetch_assoc($auditLogs)): ?>
+          <tr>
+            <td data-label="ተጠቃሚ">
+              <strong><?= e($al['full_name'] ?: 'ሲስተም') ?></strong>
+              <span class="badge badge-muted" style="font-size:.65rem;"><?= e($al['role'] ?: 'system') ?></span>
+            </td>
+            <td data-label="ድርጊት"><code><?= e($al['action']) ?></code></td>
+            <td data-label="ዝርዝር"><span class="text-muted" style="font-size:.8rem;"><?= e($al['details']) ?></span></td>
+            <td data-label="ቀን"><?= formatDate($al['created_at']) ?> <?= date('H:i', strtotime($al['created_at'])) ?></td>
+            <td data-label="IP"><span class="mono" style="font-size:.75rem;"><?= e($al['ip_address']) ?></span></td>
+          </tr>
+        <?php endwhile; ?>
+      </tbody>
+    </table>
+  </div>
 
-<?php if (mysqli_num_rows($recentRegistrations) > 0): ?>
-<div class="section-title">ዕለታዊ ምዝገባ (6 ወር)</div>
-<div class="card card-pad mb-3" style="font-size:.86rem;line-height:1.7;">
-  <?php while ($rr = mysqli_fetch_assoc($recentRegistrations)): ?>
-    <div><?= formatDate($rr['d']) ?> — <strong><?= (int)$rr['c'] ?></strong> መጽሐፍ(ት) ተመዝግቧል</div>
-  <?php endwhile; ?>
-</div>
 <?php endif; ?>
-
-<div class="section-title">የውሰት እንቅስቃሴ (6 ወር)</div>
-<div class="card card-pad mb-3">
-  <p class="text-muted" style="font-size:.84rem;margin-bottom:10px;"><?php
-    if (!$monthLabels) echo 'እስካሁን የውሰት ታሪክ የለም።';
-    else {
-      $parts = [];
-      foreach ($monthLabels as $i => $lbl) $parts[] = "$lbl ውስጥ {$monthCounts[$i]} ውሶች";
-      echo implode(' · ', $parts) . '።';
-    }
-  ?></p>
-  <canvas id="trendChart" height="160"></canvas>
-</div>
-
-<div class="row g-2">
-  <div class="col-12 col-md-6">
-    <div class="section-title">መጻሕፍት በሁኔታ</div>
-    <div class="card card-pad mb-3">
-      <p style="font-size:.84rem;margin-bottom:10px;">ይገኛል <?= $statusData['available'] ?> · restricted <?= $statusData['restricted'] ?> · reference <?= $statusData['reference'] ?> · archived <?= $statusData['archived'] ?></p>
-      <canvas id="statusChart" height="200"></canvas>
-    </div>
-  </div>
-  <div class="col-12 col-md-6">
-    <div class="section-title">መጻሕፍት በምድብ</div>
-    <div class="card card-pad mb-3">
-      <?php if ($catLabels): ?><p style="font-size:.84rem;margin-bottom:10px;"><?php
-        $parts = [];
-        foreach ($catLabels as $i => $lbl) $parts[] = "$lbl: {$catCounts[$i]}";
-        echo implode(' · ', $parts);
-      ?></p><?php endif; ?>
-      <canvas id="catChart" height="200"></canvas>
-    </div>
-  </div>
-</div>
-
-<div class="section-title">በብዛት የተወሰዱ መጻሕፍት</div>
-<div class="table-wrap">
-  <table class="app-table app-stack">
-    <thead><tr><th>የመጽሐፍ ስም</th><th>የተወሰደበት ብዛት</th></tr></thead>
-    <tbody>
-      <?php if (mysqli_num_rows($topBooks) === 0): ?><tr><td colspan="2"><div class="empty-state"><i class="bi bi-bar-chart"></i><h4>እስካሁን የውሰት ታሪክ የለም</h4></div></td></tr><?php endif; ?>
-      <?php while ($b = mysqli_fetch_assoc($topBooks)): ?>
-        <tr><td data-label="የመጽሐፍ ስም"><?= e($b['title']) ?></td><td data-label="ብዛት"><span class="badge badge-gold"><?= (int)$b['borrows'] ?></span></td></tr>
-      <?php endwhile; ?>
-    </tbody>
-  </table>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script>
-const navy = '#0F172A', gold = '#D4AF37', success='#16A34A', warning='#F59E0B', danger='#DC2626';
-new Chart(document.getElementById('trendChart'), {
-  type: 'line',
-  data: { labels: <?= json_encode($monthLabels) ?>, datasets: [{ label: 'ውሶች', data: <?= json_encode($monthCounts) ?>, borderColor: gold, backgroundColor: 'rgba(212,175,55,.15)', fill: true, tension: .35 }] },
-  options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
-});
-new Chart(document.getElementById('statusChart'), {
-  type: 'doughnut',
-  data: { labels: ['ይገኛል','ለውሰት ያልተፈቀደ','ለንባብ ብቻ','ማህደር'],
-    datasets: [{ data: [<?= $statusData['available'] ?>,<?= $statusData['restricted'] ?>,<?= $statusData['reference'] ?>,<?= $statusData['archived'] ?>], backgroundColor: [success, warning, gold, danger] }] },
-  options: { plugins: { legend: { position: 'bottom' } } }
-});
-new Chart(document.getElementById('catChart'), {
-  type: 'bar',
-  data: { labels: <?= json_encode($catLabels) ?>, datasets: [{ data: <?= json_encode($catCounts) ?>, backgroundColor: navy, borderRadius: 6 }] },
-  options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
-});
-</script>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>

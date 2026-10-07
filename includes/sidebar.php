@@ -15,13 +15,10 @@ $roleLabels = ['admin'=>'አስተዳዳሪ','librarian'=>'ቤተ-መጻሕፍ�
         <i class="bi <?= e($item['icon']) ?>"></i> <?= e($item['label']) ?>
       </a>
     <?php endforeach; ?>
-    <a href="javascript:void(0)" id="pwa-install-sidebar" style="display:none;" onclick="installApp()">
-      <i class="bi bi-arrow-down-square"></i> መተግበሪያውን ይጫኑ
-    </a>
   </nav>
   <div class="sidebar-foot">
     <?php if ($user): ?>
-      <div style="color:#fff;font-weight:700;font-size:.85rem;margin-bottom:4px;"><?= e($user['full_name']) ?></div>
+      <div style="color:#fff;font-weight:700;font-size:.85rem;margin-bottom:4px;"><?= e($user['full_name'] ?? $user['username'] ?? 'ተጠቃሚ') ?></div>
       <div style="margin-bottom:10px;"><?= e($roleLabels[$role] ?? $role) ?></div>
       <a href="<?= $base ?>logout.php" style="color:var(--gold);font-weight:700;"><i class="bi bi-box-arrow-right"></i> <?= __('sign_out') ?></a>
     <?php else: ?>

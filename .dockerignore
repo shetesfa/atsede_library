@@ -1,0 +1,16 @@
+.git
+.github
+.agents
+.phpunit.cache
+tmp/*
+logs/*
+backups/*
+tests/*
+scratch/*
+book detail/*
+*.sql
+*.zip
+*.ps1
+config.local.php
+docker-compose.dev.yml
+phpunit.xml

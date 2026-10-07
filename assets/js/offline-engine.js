@@ -254,7 +254,7 @@ class OfflineEngine {
     if (!banner) {
       banner = document.createElement('div');
       banner.id = 'offline-network-banner';
-      banner.style.cssText = 'display:none;position:sticky;top:0;z-index:1100;padding:8px 12px;text-align:center;font-size:0.8rem;font-weight:600;transition:all 0.3s;';
+      banner.style.cssText = 'display:none;position:sticky;top:0;z-index:1100;padding:8px 12px;text-align:center;font-size:0.8rem;font-weight:600;transition:all 0.3s;cursor:pointer;';
       document.body.prepend(banner);
     }
 
@@ -264,6 +264,7 @@ class OfflineEngine {
         banner.style.color = '#ffffff';
         banner.innerHTML = '<i class="bi bi-wifi"></i> መስመር ላይ ተመልሰዋል (Online) — መረጃዎች እየተመሳሰሉ ነው...';
         banner.style.display = 'block';
+        banner.onclick = null;
         this.syncQueue();
         setTimeout(() => {
           banner.style.display = 'none';
@@ -271,8 +272,18 @@ class OfflineEngine {
       } else {
         banner.style.background = '#F59E0B';
         banner.style.color = '#0F172A';
-        banner.innerHTML = '<i class="bi bi-wifi-off"></i> ከመስመር ውጭ ነዎት (Offline) — ስራዎች ይቀመጣሉ፤ ኔትዎርክ ሲመጣ በራስ-ሰር ይመሳሰላሉ።';
+        banner.innerHTML = '<i class="bi bi-wifi-off"></i> <strong>ከመስመር ውጭ ነዎት</strong> — እንደገና ለመሞከር እዚህ ይጫኑ <i class="bi bi-arrow-clockwise"></i>';
         banner.style.display = 'block';
+        banner.onclick = () => {
+          banner.innerHTML = '<i class="bi bi-arrow-repeat"></i> ኔትወርክ እየተፈተሸ ነው...';
+          setTimeout(() => {
+            if (navigator.onLine) {
+              window.location.reload();
+            } else {
+              banner.innerHTML = '<i class="bi bi-wifi-off"></i> አሁንም ከመስመር ውጭ ነዎት — እንደገና ለመሞከር እዚህ ይጫኑ <i class="bi bi-arrow-clockwise"></i>';
+            }
+          }, 600);
+        };
       }
     };
 

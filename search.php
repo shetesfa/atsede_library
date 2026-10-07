@@ -17,8 +17,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $bookId = (int)$_POST['book_id'];
     $type = $_POST['action'] === 'reserve' ? 'reserve' : 'borrow';
 
+    $bCheck = mysqli_fetch_assoc(mysqli_query($conn, "SELECT is_borrowable, borrow_status, non_borrowable_reason FROM books WHERE id=$bookId"));
+    if (!$bCheck || !is_book_borrowable($bCheck) || $bCheck['borrow_status'] === 'restricted') {
+        flash('msg', 'ይህ መጽሐፍ ለመዋስ አይፈቀድም። ' . ($bCheck['non_borrowable_reason'] ?? ''), 'danger');
+        redirect($_SERVER['REQUEST_URI']);
+    }
+
     $memberRow = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM members WHERE user_id=" . (int)$user['id']));
-    $memberId = $memberRow['id'];
+    $memberId = (int)$memberRow['id'];
 
     $dupe = mysqli_query($conn, "SELECT id FROM borrow_requests WHERE member_id=$memberId AND book_id=$bookId AND status='pending'");
     if (mysqli_num_rows($dupe) > 0) {
@@ -37,18 +43,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 $q = clean($_GET['q'] ?? '');
 $categoryId = (int)($_GET['category'] ?? 0);
 $availability = clean($_GET['availability'] ?? '');
+$borrowFilter = clean($_GET['borrowable'] ?? '');
 $sort = clean($_GET['sort'] ?? '');
 
 $where = ["b.borrow_status != 'archived'"];
-$params = []; $types = '';
+$params = []; 
+$types = '';
 
 if ($q !== '') {
-    $where[] = "(b.title LIKE ? OR b.author LIKE ? OR bc.copy_code LIKE ?)";
+    $where[] = "(b.title LIKE ? OR b.author LIKE ? OR bc.copy_code LIKE ? OR bc.qr_identifier LIKE ?)";
     $like = "%$q%";
-    $params[] = $like; $params[] = $like; $params[] = $like; $types .= 'sss';
+    $params[] = $like; $params[] = $like; $params[] = $like; $params[] = $like;
+    $types .= 'ssss';
 }
-if ($categoryId > 0) { $where[] = "b.category_id = ?"; $params[] = $categoryId; $types .= 'i'; }
-if ($availability === 'available') { $where[] = "b.borrow_status = 'available'"; }
+if ($categoryId > 0) { 
+    $where[] = "b.category_id = ?"; 
+    $params[] = $categoryId; 
+    $types .= 'i'; 
+}
+if ($availability === 'available') { 
+    $where[] = "(SELECT COUNT(*) FROM book_copies bc_chk WHERE bc_chk.book_id=b.id AND bc_chk.status='available') > 0"; 
+} elseif ($availability === 'unavailable') {
+    $where[] = "(SELECT COUNT(*) FROM book_copies bc_chk WHERE bc_chk.book_id=b.id AND bc_chk.status='available') = 0"; 
+}
+
+if ($borrowFilter === 'yes') {
+    $where[] = "(b.is_borrowable = 1 AND b.borrow_status = 'available')";
+} elseif ($borrowFilter === 'no') {
+    $where[] = "(b.is_borrowable = 0 OR b.borrow_status = 'restricted')";
+}
 
 $whereSql = implode(' AND ', $where);
 $orderSql = $sort === 'new' ? 'b.created_at DESC' : 'b.title ASC';
@@ -61,7 +84,7 @@ $sql = "SELECT DISTINCT b.*, c.name AS category_name, c.icon AS category_icon, r
         LEFT JOIN rooms r ON r.id=b.room_id
         LEFT JOIN shelves s ON s.id=b.shelf_id
         LEFT JOIN book_copies bc ON bc.book_id=b.id
-        WHERE $whereSql ORDER BY $orderSql LIMIT 60";
+        WHERE $whereSql ORDER BY $orderSql LIMIT 80";
 
 $stmt = mysqli_prepare($conn, $sql);
 if ($params) mysqli_stmt_bind_param($stmt, $types, ...$params);
@@ -80,22 +103,30 @@ include __DIR__ . '/includes/header.php';
   <div class="field" style="margin-bottom:10px;">
     <div class="input-group">
       <i class="bi bi-search"></i>
-      <input class="input" name="q" value="<?= e($q) ?>" placeholder="በመጽሐፍ ስም፣ ደራሲ ወይም የመደርደሪያ ኮድ ይፈልጉ…">
+      <input class="input" name="q" value="<?= e($q) ?>" placeholder="በመጽሐፍ ስም፣ ደራሲ፣ ኮድ ወይም QR መለያ ይፈልጉ…">
     </div>
   </div>
   <div class="row g-2">
-    <div class="col-6">
+    <div class="col-12 col-md-4">
       <select class="input" name="category">
-        <option value="0">ሁሉንም ምድቦች</option>
+        <option value="0">-- ሁሉም ምድቦች --</option>
         <?php mysqli_data_seek($categories, 0); while ($c = mysqli_fetch_assoc($categories)): ?>
           <option value="<?= (int)$c['id'] ?>" <?= $categoryId === (int)$c['id'] ? 'selected' : '' ?>><?= e($c['name']) ?></option>
         <?php endwhile; ?>
       </select>
     </div>
-    <div class="col-6">
+    <div class="col-6 col-md-4">
       <select class="input" name="availability">
-        <option value="">ምንም ይሁን</option>
-        <option value="available" <?= $availability === 'available' ? 'selected' : '' ?>>አሁን ይገኛል</option>
+        <option value="">መገኘት፦ ሁሉም</option>
+        <option value="available" <?= $availability === 'available' ? 'selected' : '' ?>>አሁን የሚገኙ ብቻ</option>
+        <option value="unavailable" <?= $availability === 'unavailable' ? 'selected' : '' ?>>አሁን የሌሉ</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-4">
+      <select class="input" name="borrowable">
+        <option value="">ውሰት፦ ሁሉም</option>
+        <option value="yes" <?= $borrowFilter === 'yes' ? 'selected' : '' ?>>ለመዋስ የሚፈቀዱ ብቻ</option>
+        <option value="no" <?= $borrowFilter === 'no' ? 'selected' : '' ?>>ለመዋስ የማይፈቀዱ</option>
       </select>
     </div>
   </div>
@@ -110,24 +141,38 @@ include __DIR__ . '/includes/header.php';
   <div class="empty-state">
     <i class="bi bi-emoji-frown"></i>
     <h4><?= __('no_books_found') ?></h4>
-    <p>ምንም ተመጣጣኝ ውጤት አልተገኘም። የሚፈልጉትን ይንገሩን፤ ቤተ መጻሕፍቱ ሊያካተተው ይችላል።</p>
-    <a href="<?= $base ?>suggest_book.php?name=<?= urlencode($q) ?>" class="btn btn-gold"><?= __('request_this_book') ?></a>
+    <p>ምንም ተመጣጣኝ ውጤት አልተገኘም። እባክዎ የፊደል አጻጻፉን አስተካክለው እንደገና ይሞክሩ።</p>
   </div>
 <?php else: ?>
   <div class="row g-2 g-md-3">
-    <?php while ($b = mysqli_fetch_assoc($results)): ?>
+    <?php while ($b = mysqli_fetch_assoc($results)): 
+      $isBorrowable = is_book_borrowable($b) && $b['borrow_status'] !== 'restricted';
+      $avail = (int)$b['available_count'];
+    ?>
       <div class="col-6 col-sm-4 col-md-3 col-lg-2">
-        <a href="<?= $base ?>book.php?id=<?= (int)$b['id'] ?>" class="book-card card-hover" style="text-decoration:none;">
+        <a href="<?= $base ?>book.php?id=<?= (int)$b['id'] ?>" class="book-card card-hover" style="text-decoration:none;display:flex;flex-direction:column;height:100%;">
           <div class="book-cover">
-            <?= book_cover_html($b['cover_image']) ?>
+            <?= book_cover_html($b['cover_original'] ?: $b['cover_image']) ?>
           </div>
-          <div class="book-body">
-            <div class="book-title"><?= e($b['title']) ?></div>
-            <div class="book-author"><?= e($b['author']) ?></div>
-            <div class="text-muted" style="font-size:.7rem;"><?= e($b['category_name']) ?> · <?= e($b['room_name'] ?: '—') ?><?= $b['shelf_name'] ? ' / '.e($b['shelf_name']) : '' ?></div>
-            <div class="book-meta">
-              <span class="badge <?= borrow_status_class($b['borrow_status']) ?>"><?= borrow_status_label($b['borrow_status']) ?></span>
-              <span class="shelf-tag"><i class="bi bi-tag"></i><?= e(strtok($b['codes'] ?: '—', ',')) ?></span>
+          <div class="book-body" style="flex:1;display:flex;flex-direction:column;justify-content:space-between;">
+            <div>
+              <div class="book-title"><?= e($b['title']) ?></div>
+              <div class="book-author"><?= e($b['author']) ?></div>
+              <div class="text-muted" style="font-size:.7rem;margin-bottom:4px;"><?= e($b['category_name']) ?></div>
+            </div>
+            
+            <div class="book-meta mt-1">
+              <?php if ($isBorrowable): ?>
+                <span class="badge badge-success" style="font-size:.65rem;"><i class="bi bi-check-circle"></i> ይዋሳል</span>
+              <?php else: ?>
+                <span class="badge badge-danger" style="font-size:.65rem;"><i class="bi bi-x-circle"></i> አይዋስም</span>
+              <?php endif; ?>
+
+              <?php if ($avail > 0): ?>
+                <span class="badge badge-gold" style="font-size:.65rem;"><?= $avail ?> ቅጂ</span>
+              <?php else: ?>
+                <span class="badge badge-muted" style="font-size:.65rem;">ወጥቷል</span>
+              <?php endif; ?>
             </div>
           </div>
         </a>

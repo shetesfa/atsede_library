@@ -7,6 +7,7 @@ require_role(['librarian','admin']);
 $user = current_user();
 $categories = mysqli_query($conn, "SELECT * FROM categories ORDER BY name ASC");
 $rooms = mysqli_query($conn, "SELECT * FROM rooms ORDER BY name ASC");
+$allShelves = mysqli_query($conn, "SELECT * FROM shelves ORDER BY id ASC");
 
 $borrowStatusLabels = ['available'=>__('available'),'restricted'=>__('restricted'),'reference'=>__('reference'),'archived'=>__('archived')];
 $copyStatusLabels = ['available'=>__('available'),'borrowed'=>__('borrowed'),'lost'=>__('lost'),'damaged'=>__('damaged'),'archived'=>__('archived')];
@@ -350,27 +351,36 @@ include __DIR__ . '/../includes/header.php';
         <div class="col-6"><div class="field"><label><?= __('publication_year') ?></label><input class="input" name="year" value="<?= e($editBook['publication_year'] ?? '') ?>"></div></div>
         <div class="col-6"><div class="field"><label><?= __('price') ?> (ብር)</label><input class="input" type="number" step="0.01" name="price" value="<?= e($editBook['price'] ?? '') ?>"></div></div>
         <div class="col-12"><div class="field"><label><?= __('publisher') ?></label><input class="input" name="publisher" value="<?= e($editBook['publisher'] ?? '') ?>"></div></div>
+        <input type="hidden" name="room_id" value="<?= (int)($editBook['room_id'] ?? 1) ?>">
         <div class="col-6">
-          <div class="field"><label><?= __('room') ?></label>
-            <select class="input" name="room_id" id="room_id">
-              <option value="0">—</option>
-              <?php mysqli_data_seek($rooms, 0); while ($r = mysqli_fetch_assoc($rooms)): ?>
-                <option value="<?= (int)$r['id'] ?>" <?= (($editBook['room_id'] ?? 0) == $r['id']) ? 'selected' : '' ?>><?= e($r['name']) ?></option>
+          <div class="field"><label><?= __('shelf') ?></label>
+            <select class="input" name="shelf_id" id="shelf_id">
+              <option value="0">— መደርደሪያ ይምረጡ —</option>
+              <?php mysqli_data_seek($allShelves, 0); while ($s = mysqli_fetch_assoc($allShelves)): ?>
+                <option value="<?= (int)$s['id'] ?>" <?= (($editBook['shelf_id'] ?? 1) == $s['id']) ? 'selected' : '' ?>><?= e($s['name']) ?></option>
               <?php endwhile; ?>
             </select>
           </div>
         </div>
         <div class="col-6">
-          <div class="field"><label><?= __('shelf') ?></label>
-            <select class="input" name="shelf_id" id="shelf_id">
-              <option value="0">—</option>
-              <?php if ($editShelves): $si = 0; mysqli_data_seek($editShelves, 0); while ($s = mysqli_fetch_assoc($editShelves)): ?>
-                <option value="<?= (int)$s['id'] ?>" <?= (($editBook['shelf_id'] ?? 0) == $s['id']) ? 'selected' : '' ?>><?= e($s['name'] ?: shelf_display_name($si)) ?></option>
-              <?php $si++; endwhile; endif; ?>
-            </select>
+          <div class="field"><label><?= __('position') ?></label>
+            <input class="input" name="position" placeholder="ምሳሌ፦ 3ኛ ረድፍ (ላይኛ - ግራ)" value="<?= e($editBook['position'] ?? '') ?>" list="common-positions">
+            <datalist id="common-positions">
+              <option value="3ኛ ረድፍ (ላይኛ - ግራ)">
+              <option value="3ኛ ረድፍ (ላይኛ - መካከለኛ)">
+              <option value="3ኛ ረድፍ (ላይኛ - ቀኝ)">
+              <option value="3ኛ ረድፍ (ላይኛ)">
+              <option value="3ኛ ረድፍ (ላይኛ - ጎን)">
+              <option value="2ኛ ረድፍ (መካከለኛ - ግራ)">
+              <option value="2ኛ ረድፍ (መካከለኛ - መካከለኛ)">
+              <option value="2ኛ ረድፍ (መካከለኛ - ቀኝ)">
+              <option value="2ኛ ረድፍ (መካከለኛ)">
+              <option value="1ኛ ረድፍ (ታችኛ - ግራ እና መካከለኛ)">
+              <option value="1ኛ ረድፍ (ታችኛ - ቀኝ)">
+              <option value="1ኛ ረድፍ (ታችኛ)">
+            </datalist>
           </div>
         </div>
-        <div class="col-12"><div class="field"><label><?= __('position') ?></label><input class="input" name="position" placeholder="ለምሳሌ፦ የላይ መደርደሪያ፣ ግራ" value="<?= e($editBook['position'] ?? '') ?>"></div></div>
         <div class="row g-2">
           <div class="col-6">
             <div class="field"><label><?= __('borrow_status') ?></label>
@@ -528,22 +538,7 @@ function updateCodePreview() {
 }
 if (catSelect) { catSelect.addEventListener('change', updateCodePreview); qtyInput.addEventListener('input', debounce(updateCodePreview, 250)); }
 
-const roomSelect = document.getElementById('room_id');
-const shelfSelect = document.getElementById('shelf_id');
-if (roomSelect) {
-  roomSelect.addEventListener('change', () => {
-    shelfSelect.innerHTML = '<option value="0">—</option>';
-    if (!roomSelect.value || roomSelect.value === '0') return;
-    fetch(window.APP_BASE + 'ajax/shelves_by_room.php?room_id=' + roomSelect.value)
-      .then(r => r.json()).then(d => {
-        (d.shelves || []).forEach(s => {
-          const opt = document.createElement('option');
-          opt.value = s.id; opt.textContent = s.name;
-          shelfSelect.appendChild(opt);
-        });
-      });
-  });
-}
+
 </script>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>

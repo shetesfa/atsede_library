@@ -22,9 +22,8 @@ tmp/
 # Uploads
 uploads/avatars/*
 !uploads/avatars/.htaccess
-uploads/covers/*
-!uploads/covers/.gitkeep
-!uploads/covers/.htaccess
+# Allow book covers to be tracked by Git for Render persistence
+!uploads/covers/*
 
 # Credentials and secrets
 config.local.php
@@ -33,3 +32,7 @@ config.php.backup
 
 # Downloads
 download/*.apk
+
+# User custom local book details
+book detail/
+database/latest_backup.sql

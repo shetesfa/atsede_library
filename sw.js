@@ -3,12 +3,14 @@
    Offline shell caching + Web Push display.
    ========================================================= */
 
-const CACHE_NAME = 'atsede-v12';
+const CACHE_NAME = 'atsede-v16';
 const OFFLINE_URL = './offline.php';
 const PRECACHE = [
+  './',
   './index.php',
   './scan.php',
   './offline.php',
+  './shelf_3d.php',
   './search.php',
   './qr.php',
   './assets/css/style.css',
@@ -18,6 +20,8 @@ const PRECACHE = [
   './assets/js/qrcode.min.js',
   './assets/icons/icon-512.png',
   './assets/icons/icon-192.png',
+  './assets/shelf_canvas.jpg',
+  './assets/shelf_3d.jpg',
 ];
 
 self.addEventListener('install', (event) => {
@@ -42,7 +46,7 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Network-first for navigations (so data stays fresh), fall back to cache/offline page.
+// Network-first for navigations; on offline, always serve the matching cached page (Same View Always)
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
@@ -54,12 +58,30 @@ self.addEventListener('fetch', (event) => {
         caches.open(CACHE_NAME).then((c) => c.put(req, copy));
         return res;
       }).catch(async () => {
+        // 1. Try exact match from cache
         const cached = await caches.match(req);
         if (cached) return cached;
-        if (req.url.includes('scan.php')) {
+
+        const url = new URL(req.url);
+
+        // 2. Specific routes fallback to their cached equivalents
+        if (url.pathname.includes('scan.php')) {
           const scanCached = await caches.match('./scan.php');
           if (scanCached) return scanCached;
         }
+        if (url.pathname.includes('shelf_3d.php')) {
+          const shelfCached = await caches.match('./shelf_3d.php');
+          if (shelfCached) return shelfCached;
+        }
+        if (url.pathname.includes('search.php')) {
+          const searchCached = await caches.match('./search.php');
+          if (searchCached) return searchCached;
+        }
+
+        // 3. Root navigation fallback to index.php (Always same view as online!)
+        const indexCached = await caches.match('./index.php') || await caches.match('./');
+        if (indexCached) return indexCached;
+
         return caches.match(OFFLINE_URL);
       })
     );

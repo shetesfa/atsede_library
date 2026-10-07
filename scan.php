@@ -79,7 +79,6 @@ include __DIR__ . '/includes/header.php';
 
   <!-- Location & Specs -->
   <div style="background:var(--slate-50);border:1px solid var(--line);border-radius:10px;padding:10px;font-size:.82rem;line-height:1.7;margin-bottom:14px;">
-    <div><i class="bi bi-door-open text-primary"></i> <strong>መገኛ ክፍል፦</strong> <span id="cardRoom">ዋና አዳራሽ</span></div>
     <div><i class="bi bi-bookshelf text-gold"></i> <strong>የመደርደሪያ ስም፦</strong> <span id="cardShelf">—</span></div>
     <div><i class="bi bi-pin-map text-danger"></i> <strong>ትክክለኛ ቦታ / ረድፍ፦</strong> <span id="cardPosition">—</span></div>
     <div id="cardCategoryWrap"><i class="bi bi-bookmark text-success"></i> <strong>ምድብ፦</strong> <span id="cardCategory">—</span></div>
@@ -89,31 +88,6 @@ include __DIR__ . '/includes/header.php';
   <div id="cardActionBox" style="display:flex;flex-direction:column;gap:8px;"></div>
 </div>
 
-<!-- Recent Copies Quick Links -->
-<div class="section-title">በቅርብ የተጨመሩ ቅጂዎች</div>
-<div class="card card-pad mb-3">
-  <div class="d-flex flex-wrap gap-2">
-    <?php
-      $recentCopies = mysqli_query($conn, "
-        SELECT bc.id, bc.copy_code, bc.qr_identifier, bc.status, b.title 
-        FROM book_copies bc 
-        JOIN books b ON b.id = bc.book_id 
-        ORDER BY bc.id DESC LIMIT 8
-      ");
-      if ($recentCopies && mysqli_num_rows($recentCopies) > 0):
-        while ($rc = mysqli_fetch_assoc($recentCopies)):
-    ?>
-      <button type="button" onclick="performLookup('<?= e($rc['qr_identifier'] ?: $rc['copy_code']) ?>')" class="btn btn-outline btn-sm" style="text-align:left;">
-        <strong><?= e($rc['copy_code']) ?></strong> — <?= e(mb_substr($rc['title'], 0, 15)) ?>…
-      </button>
-    <?php 
-        endwhile; 
-      else:
-    ?>
-      <span class="text-muted" style="font-size:.82rem;">ምንም ቅጂዎች አልተገኙም።</span>
-    <?php endif; ?>
-  </div>
-</div>
 
 <!-- Librarian Offline Borrow Modal -->
 <div id="librarianBorrowModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.7);z-index:9999;align-items:center;justify-content:center;padding:16px;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);">
@@ -342,6 +316,7 @@ async function handleDetectedCode(scannedRaw) {
   isProcessingCode = true;
 
   playScanSuccessFeedback();
+  stopCamera(); // 1 scan እንዳደረገ ካሜራው ወዲያውኑ ይዘጋል
 
   let code = scannedRaw.trim();
   try {
@@ -352,11 +327,6 @@ async function handleDetectedCode(scannedRaw) {
   } catch (e) {}
 
   await performLookup(code);
-
-  // Allow next scan after 1.8s cooldown without jarring camera stops
-  setTimeout(() => {
-    isProcessingCode = false;
-  }, 1800);
 }
 
 function lookupManualCode() {
@@ -365,6 +335,7 @@ function lookupManualCode() {
     alert('እባክዎ የቅጂውን ኮድ ያስገቡ።');
     return;
   }
+  stopCamera();
   performLookup(code);
 }
 
@@ -409,9 +380,15 @@ async function performLookup(code) {
     }
   }
 
-  // If found locally, render immediately!
+  // If found locally, immediately navigate for users or render for librarians!
   if (foundBook && foundCopy) {
     status.innerHTML = '<span class="text-success">✓ መጽሐፉ ተገኝቷል!</span>';
+    const targetBookId = foundBook.id || foundBook.book_id;
+    if (!IS_LIBRARIAN) {
+      // ለተጠቃሚው ድጋሚ ሳይጠይቅ ወዲያውኑ ወደ መጽሐፉ ሙሉ ገጽ ይወስደዋል
+      window.location.href = '<?= $base ?>book.php?id=' + targetBookId;
+      return;
+    }
     renderBookCard(foundBook, foundCopy);
     return;
   }
@@ -424,6 +401,11 @@ async function performLookup(code) {
         const data = await res.json();
         if (data.success && data.copy) {
           status.innerHTML = '<span class="text-success">✓ መጽሐፉ ተገኝቷል!</span>';
+          if (!IS_LIBRARIAN) {
+            // ለተጠቃሚው ድጋሚ ሳይጠይቅ ወዲያውኑ ወደ መጽሐፉ ሙሉ ገጽ ይወስደዋል
+            window.location.href = '<?= $base ?>book.php?id=' + data.book.id;
+            return;
+          }
           renderBookCard(data.book, data.copy);
           return;
         }
@@ -433,6 +415,7 @@ async function performLookup(code) {
 
   status.innerHTML = `<span class="text-danger">«${escapeHtml(code)}» የተባለ ቅጂ አልተገኘም።</span>`;
   document.getElementById('scannedBookCard').style.display = 'none';
+  isProcessingCode = false;
 }
 
 // 4. Render Details & Role Actions (Normal User vs Librarian)
@@ -444,7 +427,6 @@ function renderBookCard(book, copy) {
   document.getElementById('cardCopyCode').textContent = 'ID: ' + copy.copy_code;
   document.getElementById('cardTitle').textContent = book.title;
   document.getElementById('cardAuthor').textContent = 'በ ' + (book.author || 'ያልታወቀ ደራሲ');
-  document.getElementById('cardRoom').textContent = book.room_name || 'ዋና አዳራሽ';
   document.getElementById('cardShelf').textContent = book.shelf_name || 'መደበኛ መደርደሪያ';
   document.getElementById('cardPosition').textContent = copy.position || book.position || 'መደበኛ ረድፍ';
   document.getElementById('cardCategory').textContent = book.category_name || 'አጠቃላይ';
@@ -505,11 +487,8 @@ function renderBookCard(book, copy) {
     }
   }
 
-  // View Online/Full Details Link & Direct Branded QR
+  // View Online/Full Details Link
   btns += `
-    <a href="<?= $base ?>qr.php?code=${encodeURIComponent(copy.qr_identifier || copy.copy_code)}" class="btn btn-navy btn-block btn-sm" style="margin-top:2px;">
-      <i class="bi bi-qr-code"></i> የቅጂውን ነጠላ QR ኮድና ስቲከር ይዩ
-    </a>
     <a href="<?= $base ?>book.php?id=${book.id}" class="btn btn-outline btn-block btn-sm" style="margin-top:2px;">
       <i class="bi bi-info-circle"></i> ሙሉ የመጽሐፉን ገጽ ይመልከቱ
     </a>

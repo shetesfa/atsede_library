@@ -1,10 +1,10 @@
 <header class="topbar">
   <div class="brand">
     <span class="crest">
-      <?php if ($logoUrl): ?><img src="<?= e($logoUrl) ?>" alt="<?= e($siteName) ?>" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">
+      <?php if ($logoUrl): ?><img src="<?= e($logoUrl) ?>" alt="<?= e($siteName) ?>" style="width:100%;height:100%;object-fit:contain;display:block;">
       <?php else: ?><i class="bi bi-book-half"></i><?php endif; ?>
     </span>
-    <span class="d-none d-sm-inline brand-text"><?= e($siteName) ?></span>
+    <span class="brand-text"><?= e($siteName) ?></span>
   </div>
 
   <a href="<?= $base ?><?= $role === 'guest' ? 'search.php' : ($role === 'member' ? 'search.php' : 'librarian/books.php') ?>" class="icon-btn" title="<?= __('search') ?>">
@@ -13,9 +13,7 @@
 
   <div class="spacer"></div>
 
-  <button type="button" class="icon-btn" onclick="toggleTheme()" title="ገጽታ ይቀይሩ">
-    <i class="bi bi-moon-stars"></i>
-  </button>
+
 
   <?php if ($user): ?>
     <a href="<?= $base ?><?= $role === 'member' ? 'member/notifications.php' : ($role === 'librarian' ? 'librarian/notifications.php' : 'admin/notifications.php') ?>" class="icon-btn" title="<?= __('notifications') ?>">

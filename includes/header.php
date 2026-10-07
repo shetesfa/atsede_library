@@ -6,9 +6,9 @@
 $user = current_user();
 $role = $user['role'] ?? 'guest';
 $base = rel_base();
-$baseUrl = defined('BASE_URL') ? BASE_URL : '/'; // Use absolute BASE_URL for assets
-// Ensure baseUrl starts with / and doesn't end with /
-$baseUrl = '/' . trim($baseUrl, '/');
+$rawBase = defined('BASE_URL') ? BASE_URL : '/';
+$appRoot = '/' . trim($rawBase, '/') . '/';
+if ($appRoot === '//') $appRoot = '/';
 $siteName = library_name($conn);
 $pageTitle = $pageTitle ?? __('home');
 $activeKey = $activeKey ?? '';
@@ -26,23 +26,25 @@ $logoUrl = library_logo_url();
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="<?= e(mb_substr($siteName, 0, 12)) ?>">
-<link rel="manifest" href="<?= $baseUrl ?>assets/manifest.php">
-<link rel="icon" href="<?= $logoUrl ?: $baseUrl . 'assets/icons/icon-512.png' ?>">
-<link rel="apple-touch-icon" href="<?= $logoUrl ?: $baseUrl . 'assets/icons/icon-512.png' ?>">
+<link rel="manifest" href="<?= $appRoot ?>assets/manifest.php">
+<link rel="icon" href="<?= $logoUrl ?: $appRoot . 'assets/icons/icon-512.png' ?>">
+<link rel="apple-touch-icon" href="<?= $logoUrl ?: $appRoot . 'assets/icons/icon-512.png' ?>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Ethiopic:wght@500;600;700&family=Noto+Sans+Ethiopic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
-<link rel="stylesheet" href="<?= $baseUrl ?>assets/css/style.css?v=<?= time() ?>">
+<link rel="stylesheet" href="<?= $appRoot ?>assets/css/style.css?v=<?= time() ?>">
 <script>
   window.APP_BASE = "<?= $base ?>";
-  window.APP_ROOT = "<?= BASE_URL ?>/";
+  window.APP_ROOT = "<?= $appRoot ?>";
   <?php if ($user): ?>window.VAPID_PUBLIC_KEY = <?= json_encode(get_setting($conn, 'vapid_public_key', '')) ?>;<?php endif; ?>
 </script>
 </head>
 <body>
-<div class="logo-background logo-1"></div>
-<div class="logo-background logo-2"></div>
-<div class="logo-background logo-3"></div>
+<div class="logo-bg-wrapper" style="position:fixed;top:0;left:0;right:0;bottom:0;width:100%;height:100%;overflow:hidden;pointer-events:none;z-index:-1;contain:strict;clip-path:inset(0);" aria-hidden="true">
+  <div class="logo-background logo-1"></div>
+  <div class="logo-background logo-2"></div>
+  <div class="logo-background logo-3"></div>
+</div>
 <div class="app-shell">
   <?php if (empty($hideChrome)) include __DIR__ . '/sidebar.php'; ?>
   <div class="main-area">

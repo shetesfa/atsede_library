@@ -14,10 +14,6 @@ $showMoreSheet = !empty($overflow);
     <a href="javascript:void(0)" onclick="openSheet('more-sheet')">
       <i class="bi bi-three-dots"></i><?= __('more') ?>
     </a>
-  <?php else: ?>
-    <a href="javascript:void(0)" id="pwa-install-bottom" style="display:none;" onclick="installApp()">
-      <i class="bi bi-phone"></i>መተግበሪያ
-    </a>
   <?php endif; ?>
 </nav>
 
@@ -31,9 +27,6 @@ $showMoreSheet = !empty($overflow);
         <i class="bi <?= e($item['icon']) ?>" style="color:var(--gold-600);font-size:1.1rem;"></i> <?= e($item['label']) ?>
       </a>
     <?php endforeach; ?>
-    <a href="javascript:void(0)" id="pwa-install-more" style="display:none;align-items:center;gap:12px;padding:13px 4px;color:var(--ink);font-weight:600;border-bottom:1px solid var(--line);" onclick="installApp()">
-      <i class="bi bi-arrow-down-square" style="color:var(--gold-600);font-size:1.1rem;"></i> መተግበሪያውን ይጫኑ
-    </a>
     <?php if ($user): ?>
       <a href="<?= $base ?>logout.php" style="display:flex;align-items:center;gap:12px;padding:13px 4px;color:var(--danger);font-weight:700;">
         <i class="bi bi-box-arrow-right"></i> <?= __('sign_out') ?>

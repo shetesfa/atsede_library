@@ -158,25 +158,7 @@ $activeKey = 'browse';
 include __DIR__ . '/includes/header.php';
 ?>
 
-<!-- ADVANCED WATERMARK QR CODE STICKER (Matching User Exact Sample) -->
-<div class="card mb-3 text-center" style="overflow:hidden;border:1px solid var(--line);box-shadow:0 6px 24px rgba(0,0,0,0.08);background:#f8fafc;padding:16px 12px;">
-  <div style="max-width:340px;margin:0 auto;">
-    <canvas id="singleCopyWatermarkCanvas" style="width:100%;height:auto;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,0.12);display:block;background:#fff;"></canvas>
-  </div>
-
-  <div class="d-flex gap-2 justify-content-center flex-wrap mt-3">
-    <button type="button" class="btn btn-navy btn-sm" onclick="downloadSingleQr()">
-      <i class="bi bi-download"></i> ስቲከር አውርድ (PNG)
-    </button>
-    <?php if ($role === 'librarian' || $role === 'admin'): ?>
-      <a href="<?= $base ?>librarian/print_qr.php?q=<?= urlencode($copyData['copy_code']) ?>" class="btn btn-outline btn-sm">
-        <i class="bi bi-printer"></i> ስቲከር አትም
-      </a>
-    <?php endif; ?>
-  </div>
-</div>
-
-<!-- Book Preview Card -->
+<!-- Book Preview Card (Cover and Information Shown First) -->
 <div class="card mb-3" style="overflow:hidden;">
   <div class="row g-0">
     <div class="col-4 col-md-3">
@@ -196,9 +178,9 @@ include __DIR__ . '/includes/header.php';
           <?php endif; ?>
 
           <?php if ($isAvailable): ?>
-            <span class="badge badge-gold"><i class="bi bi-check-circle-fill"></i> ይህ ቅጂ ይገኛል</span>
+            <span class="badge badge-gold"><i class="bi bi-check-circle-fill"></i> ይህ ቅጂ ይገኛል (<?= e($copyData['copy_code']) ?>)</span>
           <?php else: ?>
-            <span class="badge badge-warning"><i class="bi bi-clock-fill"></i> ይህ ቅጂ ተወስዷል</span>
+            <span class="badge badge-warning"><i class="bi bi-clock-fill"></i> ይህ ቅጂ ተወስዷል (<?= e($copyData['copy_code']) ?>)</span>
           <?php endif; ?>
         </div>
 
@@ -216,22 +198,16 @@ include __DIR__ . '/includes/header.php';
 </div>
 
 <!-- DEEP SHELF & LOCATION DETAILS CARD -->
-<div class="section-title"><i class="bi bi-geo-alt-fill text-gold"></i> ጥልቅ የመደርደሪያና ክፍል መገኛ</div>
+<div class="section-title"><i class="bi bi-geo-alt-fill text-gold"></i> የመደርደሪያና ረድፍ መገኛ</div>
 <div class="card card-pad mb-3" style="background:#fff;border-left:4px solid var(--navy);">
   <div class="row g-2 text-center text-sm-start">
-    <div class="col-12 col-sm-4">
-      <div style="font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;">የክፍሉ ስም</div>
-      <div style="font-size:.95rem;font-weight:700;color:var(--navy);margin-top:2px;">
-        <i class="bi bi-door-open text-primary"></i> <?= e($copyData['room_name'] ?: 'ዋና አዳራሽ') ?>
-      </div>
-    </div>
-    <div class="col-12 col-sm-4">
+    <div class="col-12 col-sm-6">
       <div style="font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;">የመደርደሪያ ስም / ቁጥር</div>
       <div style="font-size:.95rem;font-weight:700;color:var(--navy);margin-top:2px;">
         <i class="bi bi-bookshelf text-gold"></i> <?= e($copyData['shelf_name'] ?: 'መደርደሪያ አልተመደበም') ?>
       </div>
     </div>
-    <div class="col-12 col-sm-4">
+    <div class="col-12 col-sm-6">
       <div style="font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;">ትክክለኛ የመደርደሪያ ቦታ / ረድፍ</div>
       <div style="font-size:.95rem;font-weight:700;color:var(--navy);margin-top:2px;">
         <i class="bi bi-pin-map text-danger"></i> <?= e($copyData['position'] ?: 'መደበኛ ረድፍ') ?>
@@ -239,6 +215,27 @@ include __DIR__ . '/includes/header.php';
     </div>
   </div>
 </div>
+
+<?php if ($role === 'librarian' || $role === 'admin'): ?>
+<!-- ADVANCED WATERMARK QR CODE STICKER (Admin & Librarian Printable Sticker Only) -->
+<div class="card mb-3 text-center" style="overflow:hidden;border:1px solid var(--line);box-shadow:0 6px 24px rgba(0,0,0,0.08);background:#f8fafc;padding:16px 12px;">
+  <div style="font-weight:700;color:var(--navy);font-size:.9rem;margin-bottom:8px;">
+    <i class="bi bi-qr-code text-gold"></i> መጽሐፍ ላይ የሚለጠፍ QR ስቲከር (የአስተዳዳሪ ማውረጃ)
+  </div>
+  <div style="max-width:340px;margin:0 auto;">
+    <canvas id="singleCopyWatermarkCanvas" style="width:100%;height:auto;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,0.12);display:block;background:#fff;"></canvas>
+  </div>
+
+  <div class="d-flex gap-2 justify-content-center flex-wrap mt-3">
+    <button type="button" class="btn btn-navy btn-sm" onclick="downloadSingleQr()">
+      <i class="bi bi-download"></i> ስቲከር አውርድ (PNG)
+    </button>
+    <a href="<?= $base ?>librarian/print_qr.php?q=<?= urlencode($copyData['copy_code']) ?>" class="btn btn-outline btn-sm">
+      <i class="bi bi-printer"></i> ስቲከር አትም
+    </a>
+  </div>
+</div>
+<?php endif; ?>
 
 <!-- LIBRARY STOCK & SPECIFICATIONS CARD -->
 <div class="section-title"><i class="bi bi-journal-check text-gold"></i> የመጽሐፉ ቅጂዎችና የላይብረሪ አጠቃላይ ሁኔታ</div>
@@ -414,7 +411,7 @@ include __DIR__ . '/includes/header.php';
 </div>
 
 <script src="<?= $base ?>assets/js/qrcode.min.js"></script>
-<script src="<?= $base ?>assets/js/advanced_qr_card.js"></script>
+<script src="<?= $base ?>assets/js/advanced_qr_card.js?v=<?= filemtime(__DIR__ . '/assets/js/advanced_qr_card.js') ?>"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   const canvas = document.getElementById('singleCopyWatermarkCanvas');

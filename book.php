@@ -183,7 +183,7 @@ include __DIR__ . '/includes/header.php';
         
         <div class="d-flex flex-wrap gap-1 mb-2">
           <span class="badge badge-navy"><?= e($book['category_name']) ?></span>
-          <span class="shelf-tag"><i class="bi bi-geo-alt"></i> <?= e($book['room_name'] ?: 'አዳራሽ') ?><?= $book['shelf_name'] ? ' · ' . e($book['shelf_name']) : '' ?></span>
+          <span class="shelf-tag"><i class="bi bi-bookshelf"></i> <?= !empty($book['shelf_name']) ? 'መደርደሪያ ' . e($book['shelf_name']) : 'መደበኛ መደርደሪያ' ?></span>
         </div>
       </div>
     </div>
@@ -202,9 +202,9 @@ include __DIR__ . '/includes/header.php';
   </div>
 <?php endif; ?>
 
-<!-- Physical copies tracking with Instant QR Codes -->
+<!-- Physical copies tracking -->
 <div class="d-flex justify-content-between align-items-center mb-2">
-  <div class="section-title" style="margin:0;"><i class="bi bi-qr-code text-gold"></i> የአካላዊ ቅጂዎችና የQR መለያዎች (<?= count($copiesList) ?> ቅጂዎች)</div>
+  <div class="section-title" style="margin:0;"><i class="bi bi-journal-bookmark text-gold"></i> የመጽሐፉ ቅጂዎች (<?= count($copiesList) ?> ቅጂዎች)</div>
   <?php if ($role === 'librarian' || $role === 'admin'): ?>
     <a href="<?= $base ?>librarian/print_qr.php?q=<?= urlencode($book['title']) ?>" class="btn btn-outline btn-sm" style="font-size:.78rem;">
       <i class="bi bi-printer"></i> የQR ስቲከሮች አትም
@@ -213,9 +213,6 @@ include __DIR__ . '/includes/header.php';
 </div>
 
 <div class="card card-pad mb-3">
-  <p class="text-muted" style="font-size:.82rem;margin-bottom:12px;">
-    የእያንዳንዱን ቅጂ QR ኮድ በካሜራ ለመቃኘት ወይም ለማየት የቅጂውን ካርድ ይጫኑ፦
-  </p>
   <div class="row g-2">
     <?php foreach ($copiesList as $idx => $cp): 
       $copyQrUrl = (defined('BASE_URL') ? rtrim(BASE_URL, '/') . '/' : '/') . 'qr.php?code=' . urlencode($cp['qr_identifier']);
@@ -234,21 +231,17 @@ include __DIR__ . '/includes/header.php';
               <?php endif; ?>
             </div>
             <div class="text-muted" style="font-size:.76rem;">
-              <i class="bi bi-geo-alt"></i> <?= e($book['room_name'] ?: 'ዋና አዳራሽ') ?><?= !empty($book['shelf_name']) ? ' · ' . e($book['shelf_name']) : '' ?>
-            </div>
-            <div style="font-size:.72rem;color:var(--muted);font-family:monospace;margin-top:2px;">
-              <?= e($cp['qr_identifier']) ?>
+              <i class="bi bi-bookshelf"></i> <?= !empty($book['shelf_name']) ? 'መደርደሪያ ' . e($book['shelf_name']) : 'መደበኛ መደርደሪያ' ?><?= !empty($cp['position']) ? ' · ረድፍ ' . e($cp['position']) : '' ?>
             </div>
           </div>
 
+          <?php if ($role === 'librarian' || $role === 'admin'): ?>
           <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">
             <button type="button" class="btn btn-navy btn-sm" onclick="showCopyQrModal('<?= e(addslashes($cp['copy_code'])) ?>', '<?= e(addslashes($cp['qr_identifier'])) ?>', '<?= e(addslashes($copyQrUrl)) ?>', '<?= e(addslashes($book['title'])) ?>')" style="padding:6px 10px;font-size:.78rem;">
-              <i class="bi bi-qr-code-scan"></i> QR ኮድ
+              <i class="bi bi-qr-code"></i> ስቲከር አሳይ
             </button>
-            <a href="<?= e(get_qr_url($cp['qr_identifier'])) ?>" class="text-muted" style="font-size:.74rem;text-decoration:underline;">
-              ዝርዝር ገጽ
-            </a>
           </div>
+          <?php endif; ?>
         </div>
       </div>
     <?php endforeach; ?>
@@ -256,11 +249,12 @@ include __DIR__ . '/includes/header.php';
 </div>
 
 <!-- Interactive Modal for Showing Copy QR Code Instantly -->
-<!-- Interactive Modal for Showing Copy QR Code Instantly -->
+<?php if ($role === 'librarian' || $role === 'admin'): ?>
+<!-- Interactive Modal for Showing Copy QR Code Instantly (Librarian/Admin Only) -->
 <div id="copyQrModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.75);z-index:9999;align-items:center;justify-content:center;padding:14px;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);">
   <div style="background:#fff;border-radius:20px;max-width:370px;width:100%;overflow:hidden;box-shadow:0 12px 35px rgba(0,0,0,0.35);position:relative;animation:popIn 0.2s ease;">
     <div style="background:var(--navy);padding:10px 14px;color:#fff;display:flex;align-items:center;justify-content:space-between;">
-      <span style="font-weight:700;font-size:.88rem;"><i class="bi bi-qr-code text-gold"></i> የመጽሐፍ ቅጂ ስቲከር</span>
+      <span style="font-weight:700;font-size:.88rem;"><i class="bi bi-qr-code text-gold"></i> የመጽሐፍ ቅጂ ስቲከር (የአስተዳዳሪ)</span>
       <button type="button" onclick="closeCopyQrModal()" style="background:none;border:none;color:#fff;font-size:1.2rem;cursor:pointer;line-height:1;">
         <i class="bi bi-x-lg"></i>
       </button>
@@ -271,11 +265,8 @@ include __DIR__ . '/includes/header.php';
       <canvas id="modalWatermarkCanvas" style="width:100%;max-width:320px;height:auto;border-radius:14px;box-shadow:0 6px 18px rgba(0,0,0,0.1);display:block;margin:0 auto;background:#fff;"></canvas>
 
       <div class="d-flex gap-2 justify-content-center mt-3">
-        <a id="modalDetailBtn" href="#" class="btn btn-outline btn-sm" style="flex:1;">
-          <i class="bi bi-box-arrow-up-right"></i> ወደ ገጹ ሂድ
-        </a>
         <button type="button" onclick="downloadModalQr()" class="btn btn-navy btn-sm" style="flex:1;">
-          <i class="bi bi-download"></i> ስቲከር አውርድ
+          <i class="bi bi-download"></i> ስቲከር አውርድ (PNG)
         </button>
       </div>
     </div>
@@ -283,7 +274,7 @@ include __DIR__ . '/includes/header.php';
 </div>
 
 <script src="<?= $base ?>assets/js/qrcode.min.js"></script>
-<script src="<?= $base ?>assets/js/advanced_qr_card.js"></script>
+<script src="<?= $base ?>assets/js/advanced_qr_card.js?v=<?= filemtime(__DIR__ . '/assets/js/advanced_qr_card.js') ?>"></script>
 <script>
 let modalLogoImg = new Image();
 modalLogoImg.src = '<?= $base ?>uploads/logo.png';
@@ -291,7 +282,6 @@ let currentModalCopyCode = '';
 
 function showCopyQrModal(copyCode, qrId, qrUrl, bookTitle) {
   currentModalCopyCode = copyCode;
-  document.getElementById('modalDetailBtn').href = '<?= $base ?>qr.php?code=' + encodeURIComponent(qrId);
 
   const canvas = document.getElementById('modalWatermarkCanvas');
   if (canvas && typeof renderWatermarkQrCard === 'function') {
@@ -338,6 +328,7 @@ document.getElementById('copyQrModal').addEventListener('click', function(e) {
   if (e.target === this) closeCopyQrModal();
 });
 </script>
+<?php endif; ?>
 
 <?php if ($book['description']): ?>
   <div class="section-title">መግለጫ</div>
@@ -354,7 +345,7 @@ document.getElementById('copyQrModal').addEventListener('click', function(e) {
       <tr><td data-label="አሳታሚ"><?= e($book['publisher'] ?: '—') ?></td></tr>
       <tr><td data-label="የታተመበት ዓመት"><?= e($book['publication_year'] ?: '—') ?></td></tr>
       <tr><td data-label="ዋጋ"><?= $book['price'] ? number_format($book['price'],2) . ' ብር' : '—' ?></td></tr>
-      <tr><td data-label="መደርደሪያ"><?= e($book['room_name'] ?: '—') ?> · <?= e($book['shelf_name'] ?: '—') ?><?= $book['position'] ? ' ('.e($book['position']).')' : '' ?></td></tr>
+      <tr><td data-label="መደርደሪያ"><?= e($book['shelf_name'] ?: '—') ?><?= $book['position'] ? ' ('.e($book['position']).')' : '' ?></td></tr>
     </tbody>
   </table>
 </div>

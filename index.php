@@ -32,9 +32,12 @@ include __DIR__ . '/includes/header.php';
       <button class="btn btn-gold btn-sm" type="submit"><i class="bi bi-search"></i> ፈልግ</button>
     </div>
   </form>
-  <div style="display:flex;gap:18px;margin-top:16px;font-size:.78rem;color:rgba(255,255,255,.75);">
+  <div style="display:flex;gap:14px;margin-top:16px;font-size:.78rem;color:rgba(255,255,255,.75);align-items:center;flex-wrap:wrap;">
     <span><i class="bi bi-book"></i> <?= (int)$totalBooks ?> መጻሕፍት</span>
     <span><i class="bi bi-grid"></i> <?= (int)$totalCategories ?> ምድቦች</span>
+    <a href="<?= $base ?>shelf_3d.php" style="color:#fff;text-decoration:none;font-weight:700;display:inline-flex;align-items:center;gap:5px;background:linear-gradient(135deg, #0284C7, #0369A1);padding:4px 12px;border-radius:99px;border:1px solid rgba(56,189,248,0.5);box-shadow:0 0 10px rgba(2,132,199,0.4);">
+      <i class="bi bi-box"></i> 3D የመደርደሪያ እይታ
+    </a>
   </div>
 </div>
 
@@ -49,14 +52,6 @@ include __DIR__ . '/includes/header.php';
 </div>
 <?php endif; ?>
 
-<div class="card card-pad" id="home-install-card" style="display:none;align-items:center;gap:14px;margin-bottom:18px;">
-  <i class="bi bi-phone" style="font-size:1.6rem;color:var(--gold-600);"></i>
-  <div style="flex:1;">
-    <div style="font-weight:700;color:var(--navy);">በስልክዎ ላይ ይጫኑ</div>
-    <div class="text-muted" style="font-size:.82rem;"><?= e($siteName) ?>ን እንደ መተግበሪያ ይጠቀሙ — ፈጣን መክፈት እና ማሳወቂያ።</div>
-  </div>
-  <button class="btn btn-gold btn-sm" type="button" onclick="installApp()">ይጫኑ</button>
-</div>
 
 <div class="section-title" id="categories">በምድብ ይዩ</div>
 <div class="row g-2 g-md-3">

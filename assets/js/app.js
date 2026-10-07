@@ -95,8 +95,10 @@ function hideInstallUi() {
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    const swUrl = window.APP_ROOT + 'sw.js';
-    navigator.serviceWorker.register(swUrl, { scope: window.APP_ROOT }).catch(() => {});
+    const swUrl = window.APP_ROOT + 'sw.js?v=16';
+    navigator.serviceWorker.register(swUrl, { scope: window.APP_ROOT }).then((reg) => {
+      reg.update();
+    }).catch(() => {});
   });
 }
 

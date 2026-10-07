@@ -11,7 +11,7 @@ $shelves = [];
 $res = mysqli_query($conn, "SELECT id, name FROM shelves WHERE room_id=$roomId ORDER BY id ASC");
 $idx = 0;
 while ($row = mysqli_fetch_assoc($res)) {
-    $row['name'] = shelf_display_name($idx);
+    $row['name'] = $row['name'] ?: shelf_display_name($idx);
     $shelves[] = $row;
     $idx++;
 }
