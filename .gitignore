@@ -16,6 +16,7 @@ Thumbs.db
 *.sql
 !database/migrations/*.sql
 !database/schema.sql
+!database/atsede_library_export.sql
 backups/
 tmp/
 
