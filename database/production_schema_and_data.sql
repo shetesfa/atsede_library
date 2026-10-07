@@ -1195,9 +1195,7 @@ CREATE TABLE `librarians` (
   CONSTRAINT `librarians_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Data for `librarians` (1 rows)
-INSERT INTO `librarians` (`id`, `user_id`, `assigned_by`, `created_at`) VALUES
-('1', '2', '1', '2026-06-24 23:39:19');
+-- Data for `librarians` (0 rows)
 
 -- --------------------------------------------------------
 -- Table structure for `login_attempts`
@@ -1232,11 +1230,7 @@ CREATE TABLE `members` (
   CONSTRAINT `members_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Data for `members` (3 rows)
-INSERT INTO `members` (`id`, `user_id`, `class`, `student_id`, `card_token`, `max_borrow_limit`, `created_at`, `blocked_until`) VALUES
-('2', '4', '10-A', 'አጸደቤይ01', 'c4f100b557bad19ffc749b22d083a5ed', '3', '2026-10-02 05:08:22', NULL),
-('3', '5', '11', 'አጸደቤይ02', '1d32c8b6b61717dea8cd0ba45ff82a0c', '3', '2026-10-04 14:29:29', NULL),
-('5', '8', '1', 'አጸደቤይ03', 'dd161cb6faf3cd7c3b7751623fb5e910', '3', '2026-10-07 15:49:49', NULL);
+-- Data for `members` (0 rows)
 
 -- --------------------------------------------------------
 -- Table structure for `membership_payments`
@@ -1534,14 +1528,10 @@ CREATE TABLE `users` (
   UNIQUE KEY `username` (`username`),
   KEY `idx_tg_user_id` (`telegram_user_id`),
   KEY `idx_tg_verify_token` (`telegram_verify_token`)
-) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Data for `users` (5 rows)
+-- Data for `users` (1 rows)
 INSERT INTO `users` (`id`, `full_name`, `phone`, `telegram_username`, `telegram_chat_id`, `telegram_user_id`, `telegram_verify_token`, `telegram_verify_expires`, `telegram_joined`, `profile_photo`, `username`, `password`, `role`, `status`, `avatar`, `last_login`, `created_at`, `updated_at`) VALUES
-('1', 'የቤተ መጻሕፍት አስተዳዳሪ', '0900000000', NULL, NULL, NULL, NULL, NULL, '0', NULL, 'admin', '$2y$10$6ukuP7zBk5Xa4h9B0hU.n.jhGJQOzG99scYrZF7DV0lwnZCxscwpa', 'admin', 'active', NULL, '2026-10-07 15:51:16', '2026-06-24 23:07:32', '2026-10-07 15:51:16'),
-('2', 'tesfahun bayih', '0943854325', NULL, NULL, NULL, NULL, NULL, '0', NULL, 'tesfa', '$2y$10$6ukuP7zBk5Xa4h9B0hU.n.jhGJQOzG99scYrZF7DV0lwnZCxscwpa', 'librarian', 'active', NULL, '2026-10-07 15:50:11', '2026-06-24 23:39:19', '2026-10-07 15:50:11'),
-('4', 'አበበ ከበደ', '0911223344', NULL, NULL, NULL, NULL, NULL, '0', NULL, 'member', '$2y$10$6ukuP7zBk5Xa4h9B0hU.n.jhGJQOzG99scYrZF7DV0lwnZCxscwpa', 'member', 'active', NULL, NULL, '2026-10-02 05:08:22', '2026-10-07 04:31:05'),
-('5', 'tesfa', '0943854325', 'shetesfa', '1537845176', NULL, NULL, NULL, '1', 'uploads/avatars/avatar_5_1791149439.jpg', 'shetesfa', '$2y$10$6ukuP7zBk5Xa4h9B0hU.n.jhGJQOzG99scYrZF7DV0lwnZCxscwpa', 'member', 'active', NULL, '2026-10-07 15:50:52', '2026-10-04 14:29:29', '2026-10-07 15:50:52'),
-('8', 'te', '0909090909', 'te', NULL, NULL, 'edd6e41ea1a227991cc383bc62b1c85e3e3f9f6222ab8bbfc37f9effc86fad23', '2026-10-09 16:24:56', '0', NULL, 'tesf', '$2y$10$aX4PqHdVgteQM.yq2a.1xewXLbkg2sFnVf2G4cEiVipjCGJGl38zS', 'member', 'active', NULL, '2026-10-07 15:51:48', '2026-10-07 15:49:49', '2026-10-07 16:24:56');
+('1', 'ተስፋ (Admin)', '0911000000', NULL, NULL, NULL, NULL, NULL, '0', NULL, 'tesfa', '$2y$10$fg.mz/GxNgA68SUhsrRRVO2LvEaMEq6s4g.8L5cYkU1neANga6pP.', 'admin', 'active', NULL, NULL, '2026-10-07 17:19:00', '2026-10-07 17:19:00');
 
 SET FOREIGN_KEY_CHECKS = 1;
