@@ -217,8 +217,41 @@ include __DIR__ . '/../includes/header.php';
         <i class="bi bi-wifi"></i> Bot ግንኙነት ሙከራ
       </a>
       <a href="?set_webhook=1" class="btn btn-sm" style="background:#229ED9;color:#fff;font-weight:700;">
-        <i class="bi bi-link-45deg"></i> 🔗 ቦቱን ከዚህ ድረ-ገጽ ጋር አገናኝ (Set Webhook)
-      </a>
+    </div>
+
+    <!-- Personal Admin Telegram Link -->
+    <?php
+    $admUser = current_user();
+    $admId = (int)($admUser['id'] ?? 0);
+    $admTgJoined = 0;
+    $admChatId = '';
+    if ($admId > 0) {
+        $admRow = mysqli_fetch_assoc(mysqli_query($conn, "SELECT telegram_chat_id, telegram_joined FROM users WHERE id = {$admId}"));
+        if ($admRow) {
+            $admTgJoined = (int)($admRow['telegram_joined'] ?? 0);
+            $admChatId = $admRow['telegram_chat_id'] ?? '';
+        }
+    }
+    $botUname = $settings['telegram_bot_username'] ?? 'Atsedeteguhan_library_bot';
+    $admVerifyToken = (!$admTgJoined && $admId > 0) ? generate_telegram_verify_token($conn, $admId) : '';
+    $admTgLink = "https://t.me/{$botUname}?start=verify_{$admVerifyToken}";
+    ?>
+    <div style="margin-top:16px;padding:14px;border:1.5px solid #229ED9;background:#f0f9ff;border-radius:12px;">
+      <div style="font-weight:800;font-size:0.98rem;color:#0369a1;margin-bottom:6px;display:flex;align-items:center;gap:8px;">
+        <i class="bi bi-person-badge-fill" style="font-size:1.2rem;"></i> የእርስዎ (የአስተዳዳሪው) የግል ቴሌግራም መለያ
+      </div>
+      <?php if ($admTgJoined && $admChatId): ?>
+        <div style="color:#15803d;font-weight:700;font-size:0.88rem;">
+          <i class="bi bi-check-circle-fill"></i> የእርስዎ ቴሌግራም ተገናኝቷል! (Chat ID: <?= e($admChatId) ?>)
+        </div>
+      <?php else: ?>
+        <div style="font-size:0.86rem;color:#334155;margin-bottom:10px;">
+          የአስተዳዳሪ ማሳወቂያዎችን በግል ቴሌግራምዎ ለመቀበል ከታች ያለውን ሰማያዊ አዝራር ይጫኑ እና ቴሌግራም ሲከፈት <b>Start</b> ይበሉ።
+        </div>
+        <a href="<?= e($admTgLink) ?>" target="_blank" class="btn btn-sm" style="background:#229ED9;color:#fff;font-weight:700;display:inline-flex;align-items:center;gap:6px;">
+          <i class="bi bi-telegram"></i> 📲 የእኔን ቴሌግራም አሁን አገናኝ (Connect My Telegram)
+        </a>
+      <?php endif; ?>
     </div>
   </div>
 

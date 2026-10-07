@@ -20,7 +20,7 @@
       <i class="bi bi-bell"></i>
       <span id="notif-dot" class="dot" style="display:none;">0</span>
     </a>
-    <a href="<?= $base ?><?= $role === 'member' ? 'member/profile.php' : ($role === 'admin' ? 'admin/dashboard.php' : 'librarian/dashboard.php') ?>" class="icon-btn" title="<?= __('profile') ?>">
+    <a href="<?= $base ?><?= $role === 'member' ? 'member/profile.php' : ($role === 'admin' ? 'admin/profile.php' : 'librarian/dashboard.php') ?>" class="icon-btn" title="<?= __('profile') ?>">
       <i class="bi bi-person-circle"></i>
     </a>
   <?php else: ?>

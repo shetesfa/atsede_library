@@ -21,6 +21,7 @@ function nav_items_for_role($role) {
                 ['key'=>'fines','label'=>'ቅጣቶች','icon'=>'bi-receipt','href'=>$base.'librarian/fines.php'],
                 ['key'=>'notifications_send','label'=>__('send_notice'),'icon'=>'bi-megaphone','href'=>$base.'admin/notifications.php'],
                 ['key'=>'settings','label'=>__('settings'),'icon'=>'bi-gear','href'=>$base.'admin/settings.php'],
+                ['key'=>'profile','label'=>__('profile'),'icon'=>'bi-person-circle','href'=>$base.'admin/profile.php'],
             ];
         case 'librarian':
             return [
