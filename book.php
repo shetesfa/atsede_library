@@ -345,7 +345,7 @@ document.getElementById('copyQrModal').addEventListener('click', function(e) {
       <tr><td data-label="አሳታሚ"><?= e($book['publisher'] ?: '—') ?></td></tr>
       <tr><td data-label="የታተመበት ዓመት"><?= e($book['publication_year'] ?: '—') ?></td></tr>
       <tr><td data-label="ዋጋ"><?= $book['price'] ? number_format($book['price'],2) . ' ብር' : '—' ?></td></tr>
-      <tr><td data-label="መደርደሪያ"><?= e($book['shelf_name'] ?: '—') ?><?= $book['position'] ? ' ('.e($book['position']).')' : '' ?></td></tr>
+      <tr><td data-label="መገኛ ቦታ"><?= e($book['shelf_name'] ?: '—') ?><?= $book['position'] ? ' ('.e($book['position']).')' : '' ?></td></tr>
     </tbody>
   </table>
 </div>

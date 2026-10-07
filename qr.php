@@ -202,9 +202,9 @@ include __DIR__ . '/includes/header.php';
 <div class="card card-pad mb-3" style="background:#fff;border-left:4px solid var(--navy);">
   <div class="row g-2 text-center text-sm-start">
     <div class="col-12 col-sm-6">
-      <div style="font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;">የመደርደሪያ ስም / ቁጥር</div>
+      <div style="font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;">መገኛ አቅጣጫ</div>
       <div style="font-size:.95rem;font-weight:700;color:var(--navy);margin-top:2px;">
-        <i class="bi bi-bookshelf text-gold"></i> <?= e($copyData['shelf_name'] ?: 'መደርደሪያ አልተመደበም') ?>
+        <i class="bi bi-compass text-gold"></i> <?= e($copyData['shelf_name'] ?: 'አልተመደበም') ?>
       </div>
     </div>
     <div class="col-12 col-sm-6">
