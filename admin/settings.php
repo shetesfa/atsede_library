@@ -65,6 +65,24 @@ if (isset($_GET['test_telegram'])) {
     }
 }
 
+// 1-Click Set Webhook to Current Hosting URL
+if (isset($_GET['set_webhook'])) {
+    $token = $settings['telegram_bot_token'] ?? '';
+    if ($token) {
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443) || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ? 'https://' : 'http://';
+        $host = $_SERVER['HTTP_HOST'] ?? '';
+        $hookUrl = rtrim($protocol . $host, '/') . BASE_URL . 'telegram_bot.php';
+        $r = telegram_api('setWebhook', ['url' => $hookUrl], $token);
+        if (!empty($r['ok'])) {
+            $tgTestMsg = '<span style="color:var(--success)"><i class="bi bi-check-circle-fill"></i> <b>እንኳን ደስ አለዎት! ቴሌግራም ቦቱ በተሳካ ሁኔታ ተገናኝቷል!</b><br><small>የተገናኘው አድራሻ፦ ' . e($hookUrl) . '</small></span>';
+        } else {
+            $tgTestMsg = '<span style="color:var(--danger)"><i class="bi bi-x-circle-fill"></i> Webhook አልተገናኘም፦ ' . e($r['description'] ?? 'ያልታወቀ ስህተት') . '</span>';
+        }
+    } else {
+        $tgTestMsg = '<span style="color:var(--danger)">Bot token አልተቀናጀም።</span>';
+    }
+}
+
 $pageTitle = __('settings');
 $activeKey = 'settings';
 include __DIR__ . '/../includes/header.php';
@@ -194,9 +212,14 @@ include __DIR__ . '/../includes/header.php';
       <div class="card card-pad mb-2" style="font-size:.85rem;"><?= $tgTestMsg ?></div>
     <?php endif; ?>
 
-    <a href="?test_telegram=1" class="btn btn-outline btn-sm">
-      <i class="bi bi-wifi"></i> Bot ግንኙነት ሙከራ
-    </a>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+      <a href="?test_telegram=1" class="btn btn-outline btn-sm">
+        <i class="bi bi-wifi"></i> Bot ግንኙነት ሙከራ
+      </a>
+      <a href="?set_webhook=1" class="btn btn-sm" style="background:#229ED9;color:#fff;font-weight:700;">
+        <i class="bi bi-link-45deg"></i> 🔗 ቦቱን ከዚህ ድረ-ገጽ ጋር አገናኝ (Set Webhook)
+      </a>
+    </div>
   </div>
 
   <button type="submit" class="btn btn-gold btn-block">
