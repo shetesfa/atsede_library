@@ -183,7 +183,7 @@ include __DIR__ . '/includes/header.php';
         
         <div class="d-flex flex-wrap gap-1 mb-2">
           <span class="badge badge-navy"><?= e($book['category_name']) ?></span>
-          <span class="shelf-tag"><i class="bi bi-bookshelf"></i> <?= !empty($book['shelf_name']) ? 'መደርደሪያ ' . e($book['shelf_name']) : 'መደበኛ መደርደሪያ' ?></span>
+          <span class="shelf-tag"><i class="bi bi-bookshelf"></i> <?= !empty($book['shelf_name']) ? e($book['shelf_name']) : 'መደበኛ መደርደሪያ' ?></span>
         </div>
       </div>
     </div>
@@ -231,7 +231,7 @@ include __DIR__ . '/includes/header.php';
               <?php endif; ?>
             </div>
             <div class="text-muted" style="font-size:.76rem;">
-              <i class="bi bi-bookshelf"></i> <?= !empty($book['shelf_name']) ? 'መደርደሪያ ' . e($book['shelf_name']) : 'መደበኛ መደርደሪያ' ?><?= !empty($cp['position']) ? ' · ረድፍ ' . e($cp['position']) : '' ?>
+              <i class="bi bi-bookshelf"></i> <?= !empty($book['shelf_name']) ? e($book['shelf_name']) : 'መደበኛ መደርደሪያ' ?><?= !empty($cp['position']) ? ' · ረድፍ ' . e($cp['position']) : '' ?>
             </div>
           </div>
 

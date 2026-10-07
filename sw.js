@@ -3,7 +3,7 @@
    Offline shell caching + Web Push display.
    ========================================================= */
 
-const CACHE_NAME = 'atsede-v16';
+const CACHE_NAME = 'atsede-v17';
 const OFFLINE_URL = './offline.php';
 const PRECACHE = [
   './',
