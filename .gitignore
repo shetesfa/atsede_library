@@ -20,6 +20,7 @@ Thumbs.db
 !database/production_schema_and_data.sql
 backups/
 tmp/
+scratch/
 
 # Uploads
 uploads/avatars/*

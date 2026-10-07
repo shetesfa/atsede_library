@@ -654,7 +654,8 @@ CREATE TABLE `books` (
   KEY `category_id` (`category_id`),
   KEY `room_id` (`room_id`),
   KEY `shelf_id` (`shelf_id`),
-  FULLTEXT KEY `ft_search` (`title`,`author`),
+  KEY `idx_title` (`title`),
+  KEY `idx_author` (`author`),
   CONSTRAINT `books_ibfk_1` FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`),
   CONSTRAINT `books_ibfk_2` FOREIGN KEY (`room_id`) REFERENCES `rooms` (`id`) ON DELETE SET NULL,
   CONSTRAINT `books_ibfk_3` FOREIGN KEY (`shelf_id`) REFERENCES `shelves` (`id`) ON DELETE SET NULL
