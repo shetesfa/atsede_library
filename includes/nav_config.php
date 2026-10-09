@@ -29,7 +29,7 @@ function nav_items_for_role($role) {
                 ['key'=>'requests','label'=>__('requests'),'icon'=>'bi-inbox','href'=>$base.'librarian/requests.php','primary'=>true],
                 ['key'=>'payments','label'=>__('payments'),'icon'=>'bi-cash-coin','href'=>$base.'librarian/payments.php','primary'=>true],
                 ['key'=>'fines','label'=>'ቅጣቶች','icon'=>'bi-receipt','href'=>$base.'librarian/fines.php','primary'=>true],
-                ['key'=>'scan','label'=>__('scan_qr'),'icon'=>'bi-qr-code-scan','href'=>$base.'librarian/scan.php','primary'=>true],
+                ['key'=>'scan','label'=>__('scan_qr'),'icon'=>'bi-qr-code-scan','href'=>$base.'scan.php','primary'=>true],
                 ['key'=>'books','label'=>__('books'),'icon'=>'bi-book','href'=>$base.'librarian/books.php'],
                 ['key'=>'returns','label'=>__('returns'),'icon'=>'bi-arrow-return-left','href'=>$base.'librarian/returns.php'],
                 ['key'=>'members','label'=>__('members'),'icon'=>'bi-people','href'=>$base.'librarian/members.php'],

@@ -29,10 +29,9 @@ $logoUrl = library_logo_url();
 <link rel="manifest" href="<?= $appRoot ?>assets/manifest.php">
 <link rel="icon" href="<?= $logoUrl ?: $appRoot . 'assets/icons/icon-512.png' ?>">
 <link rel="apple-touch-icon" href="<?= $appRoot ?>assets/icons/icon-maskable-512.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Ethiopic:wght@500;600;700&family=Noto+Sans+Ethiopic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
-<link rel="stylesheet" href="<?= $appRoot ?>assets/css/style.css?v=<?= time() ?>">
+<link rel="stylesheet" href="<?= $appRoot ?>assets/lib/fonts/fonts.css">
+<link rel="stylesheet" href="<?= $appRoot ?>assets/lib/bootstrap-icons/bootstrap-icons.css">
+<link rel="stylesheet" href="<?= $appRoot ?>assets/css/style.css?v=<?= @filemtime(__DIR__ . '/../assets/css/style.css') ?: 1 ?>">
 <script>
   window.APP_BASE = "<?= $base ?>";
   window.APP_ROOT = "<?= $appRoot ?>";

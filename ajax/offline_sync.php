@@ -55,6 +55,61 @@ if (!$data || empty($data['events']) || !is_array($data['events'])) {
     return;
 }
 
+// ---------------------------------------------------------------
+// Helpers (guarded so the file can be included repeatedly by tests)
+// ---------------------------------------------------------------
+if (!function_exists('atsede_copy_id_from_qr')) {
+    /** Resolve a book_copies.id from a qr_identifier (used when a copy was created offline and has no server id yet). */
+    function atsede_copy_id_from_qr($conn, $qr) {
+        $qr = trim((string)$qr);
+        if ($qr === '') return 0;
+        $st = mysqli_prepare($conn, "SELECT id FROM book_copies WHERE qr_identifier = ? LIMIT 1");
+        if (!$st) return 0;
+        mysqli_stmt_bind_param($st, 's', $qr);
+        mysqli_stmt_execute($st);
+        $row = mysqli_fetch_assoc(mysqli_stmt_get_result($st));
+        mysqli_stmt_close($st);
+        return (int)($row['id'] ?? 0);
+    }
+}
+
+if (!function_exists('atsede_new_qr_identifier')) {
+    function atsede_new_qr_identifier($bookId, $code) {
+        return 'ATS-COPY-' . strtoupper(substr(md5($bookId . '_' . $code . '_' . bin2hex(random_bytes(8))), 0, 10));
+    }
+}
+
+if (!function_exists('atsede_save_offline_cover')) {
+    /**
+     * Save a base64 data-URL cover sent by an offline client through the SAME
+     * pipeline as the online form (secure_process_image + optional GitHub storage).
+     * Returns the stored cover name/URL, null when no cover, or false on failure.
+     */
+    function atsede_save_offline_cover($dataUrl) {
+        if (!is_string($dataUrl) || $dataUrl === '') return null;
+        if (!preg_match('#^data:image/(jpeg|png|webp);base64,#i', $dataUrl)) return false;
+        $bin = base64_decode(substr($dataUrl, strpos($dataUrl, ',') + 1), true);
+        if ($bin === false || strlen($bin) > 3 * 1024 * 1024) return false;
+
+        $tmp = tempnam(sys_get_temp_dir(), 'offcov_');
+        if ($tmp === false || file_put_contents($tmp, $bin) === false) return false;
+
+        $res = secure_process_image($tmp, UPLOAD_DIR, 'cover_' . time());
+        @unlink($tmp);
+        if (empty($res['success'])) return false;
+
+        $name = $res['file_name'];
+        if (!function_exists('upload_cover_to_github')) {
+            @require_once __DIR__ . '/../includes/github_storage.php';
+        }
+        if (function_exists('upload_cover_to_github')) {
+            $gh = upload_cover_to_github(UPLOAD_DIR . $name, $name);
+            if ($gh) $name = $gh;
+        }
+        return $name;
+    }
+}
+
 $deviceId = clean($data['device_id'] ?? ('browser_' . $userId));
 $results = [];
 $syncedCount = 0;
@@ -121,7 +176,7 @@ foreach ($data['events'] as $ev) {
     $eventMessage = '';
 
     // 4. Role Authorization Guard
-    if (in_array($opType, ['BORROW', 'RETURN', 'PAYMENT'], true) && !$isStaff) {
+    if (in_array($opType, ['BORROW', 'RETURN', 'PAYMENT', 'ADD_BOOK'], true) && !$isStaff) {
         $eventStatus = 'rejected';
         $eventMessage = 'ይህን ክንውን ለማከናወን ስልጣን የለዎትም (ሊብራሪያን ወይም አድሚን ብቻ)።';
     } else {
@@ -180,6 +235,10 @@ foreach ($data['events'] as $ev) {
                 case 'BORROW':
                     $memberId   = (int)($payload['member_id'] ?? 0);
                     $copyId     = (int)($payload['copy_id'] ?? 0);
+                    if ($copyId <= 0) {
+                        // Copy was created offline (no server id yet): resolve by its QR identifier
+                        $copyId = atsede_copy_id_from_qr($conn, $payload['qr_identifier'] ?? '');
+                    }
                     $borrowDays = (int)get_setting($conn, 'borrow_days', 14);
                     $dueDate    = date('Y-m-d', strtotime("+{$borrowDays} days", $eventTime));
 
@@ -201,6 +260,9 @@ foreach ($data['events'] as $ev) {
 
                 case 'RETURN':
                     $copyId   = (int)($payload['copy_id'] ?? 0);
+                    if ($copyId <= 0) {
+                        $copyId = atsede_copy_id_from_qr($conn, $payload['qr_identifier'] ?? '');
+                    }
                     $borrowId = (int)($payload['borrow_id'] ?? 0);
                     $action   = clean($payload['action'] ?? 'returned');
 
@@ -229,6 +291,97 @@ foreach ($data['events'] as $ev) {
                         $eventStatus = 'rejected';
                         $eventMessage = $res['message'];
                     }
+                    break;
+
+                case 'ADD_BOOK':
+                    $title      = clean($payload['title'] ?? '');
+                    $author     = clean($payload['author'] ?? '');
+                    if ($author === '' || strtolower($author) === 'unwritten') {
+                        $author = 'ጸሃፊው አልተገለጸም';
+                    }
+                    $categoryId = (int)($payload['category_id'] ?? 0);
+                    $quantity   = min(200, max(1, (int)($payload['quantity'] ?? 1)));
+                    $year       = clean($payload['year'] ?? '') ?: null;
+                    $publisher  = clean($payload['publisher'] ?? '') ?: null;
+                    $description = clean($payload['description'] ?? '') ?: null;
+                    $price      = (isset($payload['price']) && $payload['price'] !== '' && $payload['price'] !== null) ? (float)$payload['price'] : null;
+                    $roomId     = (int)($payload['room_id'] ?? 0) ?: null;
+                    $shelfId    = (int)($payload['shelf_id'] ?? 0) ?: null;
+                    $position   = clean($payload['position'] ?? '') ?: null;
+                    $borrowStatus = in_array($payload['borrow_status'] ?? '', ['available','restricted','reference','archived'], true) ? $payload['borrow_status'] : 'available';
+                    $isBorrowable = isset($payload['is_borrowable']) ? (int)(bool)$payload['is_borrowable'] : 1;
+                    $nonBorrowableReason = clean($payload['non_borrowable_reason'] ?? '') ?: null;
+
+                    if ($title === '' || $categoryId <= 0) {
+                        $eventStatus = 'rejected';
+                        $eventMessage = 'የመጽሐፍ ስም እና ምድብ ያስፈልጋሉ።';
+                        break;
+                    }
+
+                    $catChk = mysqli_prepare($conn, "SELECT id FROM categories WHERE id = ? LIMIT 1");
+                    mysqli_stmt_bind_param($catChk, 'i', $categoryId);
+                    mysqli_stmt_execute($catChk);
+                    $catOk = mysqli_fetch_assoc(mysqli_stmt_get_result($catChk));
+                    mysqli_stmt_close($catChk);
+                    if (!$catOk) {
+                        $eventStatus = 'rejected';
+                        $eventMessage = 'ምድቡ በአገልጋዩ ላይ አልተገኘም።';
+                        break;
+                    }
+
+                    // Cover image (optional). A bad image must not lose the book itself.
+                    $coverName = atsede_save_offline_cover($payload['cover_data'] ?? null);
+                    $coverNote = '';
+                    if ($coverName === false) {
+                        $coverName = null;
+                        $coverNote = ' (የሽፋን ምስሉ አልተቀበለም፤ በኋላ ያክሉ)';
+                    }
+
+                    // Offline entry cannot ask the librarian about duplicates, so keep the
+                    // book as a separate record (non-destructive) and flag it.
+                    $dupNote = '';
+                    $dupStmt = mysqli_prepare($conn, "SELECT id FROM books WHERE LOWER(title)=LOWER(?) AND LOWER(author)=LOWER(?) LIMIT 1");
+                    mysqli_stmt_bind_param($dupStmt, 'ss', $title, $author);
+                    mysqli_stmt_execute($dupStmt);
+                    $dupRow = mysqli_fetch_assoc(mysqli_stmt_get_result($dupStmt));
+                    mysqli_stmt_close($dupStmt);
+                    if ($dupRow) {
+                        $dupNote = " ⚠ ተመሳሳይ መጽሐፍ (ቁጥር {$dupRow['id']}) ቀደም ሲል አለ፤ እንደ የተለየ መዝገብ ተመዝግቧል።";
+                    }
+
+                    mysqli_begin_transaction($conn);
+                    $insB = mysqli_prepare($conn, "INSERT INTO books (title, author, category_id, quantity, publication_year, publisher, description, price, cover_image, room_id, shelf_id, position, borrow_status, is_borrowable, non_borrowable_reason, created_by)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+                    mysqli_stmt_bind_param($insB, 'ssiisssdsiissisi', $title, $author, $categoryId, $quantity, $year, $publisher, $description, $price, $coverName, $roomId, $shelfId, $position, $borrowStatus, $isBorrowable, $nonBorrowableReason, $userId);
+                    mysqli_stmt_execute($insB);
+                    $newBookId = (int)mysqli_insert_id($conn);
+                    mysqli_stmt_close($insB);
+
+                    // Authoritative copy codes come from the server (no clashes between devices).
+                    // The QR identifiers chosen offline are KEPT so labels printed offline stay valid.
+                    $codes = next_codes_for_category($conn, $categoryId, $quantity);
+                    $clientCopies = is_array($payload['copies'] ?? null) ? array_values($payload['copies']) : [];
+                    foreach ($codes as $i => $code) {
+                        $qrId = trim((string)($clientCopies[$i]['qr_identifier'] ?? ''));
+                        $valid = (bool)preg_match('/^ATS-COPY-[A-Z0-9]{8,20}$/', $qrId);
+                        if ($valid && atsede_copy_id_from_qr($conn, $qrId) > 0) {
+                            $valid = false; // already used
+                        }
+                        if (!$valid) {
+                            $qrId = atsede_new_qr_identifier($newBookId, $code);
+                        }
+                        $insC = mysqli_prepare($conn, "INSERT INTO book_copies (book_id, copy_code, qr_identifier) VALUES (?,?,?)");
+                        mysqli_stmt_bind_param($insC, 'iss', $newBookId, $code, $qrId);
+                        mysqli_stmt_execute($insC);
+                        mysqli_stmt_close($insC);
+                    }
+                    mysqli_commit($conn);
+
+                    notify_broadcast($conn, 'አዲስ መጽሐፍ ታክሏል', "\"$title\" በ$author ወደ ቤተ መጻሕፍት ገብቷል።", 'new_book', 'book.php?id=' . $newBookId);
+                    audit($conn, $userId, 'book_created_offline', "book_id:$newBookId codes:" . implode(',', $codes) . ($dupRow ? ' possible_duplicate_of:' . $dupRow['id'] : ''));
+
+                    $eventStatus = 'synced';
+                    $eventMessage = 'መጽሐፉ ታክሏል። ኮዶች፦ ' . implode(', ', $codes) . $coverNote . $dupNote;
                     break;
 
                 case 'PAYMENT':

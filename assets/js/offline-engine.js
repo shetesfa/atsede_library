@@ -169,6 +169,16 @@ class OfflineEngine {
       }
 
       tx.oncomplete = () => {
+        // Staff: make sure the working pages are available offline
+        if (data.user && (data.user.role === 'librarian' || data.user.role === 'admin')) {
+          this.warmPages([
+            'librarian/books.php',
+            'scan.php',
+            'search.php',
+            'index.php',
+            data.user.role === 'admin' ? 'admin/dashboard.php' : 'librarian/dashboard.php',
+          ]);
+        }
         // Silently pre-cache book covers in background (no annoying popups)
         if (data.books && Array.isArray(data.books)) {
           this.cacheCoversInBackground(data.books);
@@ -227,7 +237,152 @@ class OfflineEngine {
     }
   }
 
-  // Queue an offline event (PAYMENT, BORROW, RETURN, BORROW_REQUEST)
+  // ---------- Offline "Add Book" (librarian / admin) ----------
+
+  // Same format the server uses: ATS-COPY-XXXXXXXXXX (10 hex, upper-case)
+  genQrId() {
+    const bytes = new Uint8Array(5);
+    (window.crypto || window.msCrypto).getRandomValues(bytes);
+    return 'ATS-COPY-' + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+  }
+
+  copySuffix(index) {
+    let suffix = '';
+    while (index >= 0) {
+      suffix = String.fromCharCode(65 + (index % 26)) + suffix;
+      index = Math.floor(index / 26) - 1;
+    }
+    return suffix;
+  }
+
+  // Provisional copy codes, computed with the server's rule (next number in the category).
+  // The server assigns the FINAL code on sync; the QR identifier never changes.
+  async provisionalCodes(categoryId, quantity) {
+    const books = await this.getAll('books');
+    let max = 0;
+    for (const b of books) {
+      if (parseInt(b.category_id) !== parseInt(categoryId)) continue;
+      for (const c of b.copies || []) {
+        const m = /^(\d+)/.exec(c.copy_code || '');
+        if (m) max = Math.max(max, parseInt(m[1], 10));
+      }
+    }
+    const base = String(max + 1).padStart(2, '0');
+    const codes = [];
+    for (let i = 0; i < quantity; i++) codes.push(quantity <= 1 ? base : base + this.copySuffix(i));
+    return codes;
+  }
+
+  // Shrink a cover photo so it fits comfortably in IndexedDB and in one sync request.
+  async compressImage(file, maxSide = 900, quality = 0.8) {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = reject;
+      fr.readAsDataURL(file);
+    });
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = reject;
+      im.src = dataUrl;
+    });
+    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(img.width * scale));
+    canvas.height = Math.max(1, Math.round(img.height * scale));
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    let out = canvas.toDataURL('image/jpeg', quality);
+    while (out.length > 700000 && quality > 0.4) {
+      quality -= 0.1;
+      out = canvas.toDataURL('image/jpeg', quality);
+    }
+    return out;
+  }
+
+  /**
+   * Add a book while offline.
+   * 1. queues an ADD_BOOK event (uploaded + inserted into MySQL on sync)
+   * 2. stores a provisional book + copies in IndexedDB so it is immediately
+   *    searchable and its QR codes are scannable offline.
+   */
+  async addBookOffline(fields, coverFile, labels = {}) {
+    const tempId = 'tmp-' + this.generateUUID();
+    const quantity = Math.min(200, Math.max(1, parseInt(fields.quantity, 10) || 1));
+    const codes = await this.provisionalCodes(fields.category_id, quantity);
+    const copies = codes.map((code) => ({
+      id: null,
+      copy_code: code,
+      qr_identifier: this.genQrId(),
+      status: 'available',
+    }));
+
+    let cover = null;
+    if (coverFile && coverFile.size) {
+      try { cover = await this.compressImage(coverFile); } catch (e) { cover = null; }
+    }
+
+    await this.queueEvent('ADD_BOOK', {
+      ...fields,
+      quantity,
+      temp_book_id: tempId,
+      copies: copies.map((c) => ({ qr_identifier: c.qr_identifier })),
+      cover_data: cover,
+    });
+
+    const book = {
+      id: tempId,
+      title: fields.title,
+      author: fields.author || 'ጸሃፊው አልተገለጸም',
+      category_id: parseInt(fields.category_id, 10) || 0,
+      category_name: labels.category_name || '',
+      shelf_name: labels.shelf_name || '',
+      room_name: labels.room_name || '',
+      position: fields.position || '',
+      price: fields.price || null,
+      publication_year: fields.year || '',
+      publisher: fields.publisher || '',
+      borrow_status: fields.borrow_status || 'available',
+      is_borrowable: parseInt(fields.is_borrowable, 10) === 0 ? 0 : 1,
+      non_borrowable_reason: fields.non_borrowable_reason || '',
+      available_copies: copies.length,
+      copies,
+      cover_image: null,
+      cover_url: cover,
+      _pending: true,
+    };
+    await this.put('books', book);
+    return book;
+  }
+
+  async getPendingBooks() {
+    const all = await this.getAll('books');
+    return all.filter((b) => b && b._pending);
+  }
+
+  // Cache the staff pages (HTML) so they open offline even if never visited by hand.
+  async warmPages(paths) {
+    if (!('caches' in window) || !navigator.onLine) return;
+    try {
+      const last = parseInt(localStorage.getItem('atsede_warm_at') || '0', 10);
+      if (Date.now() - last < 10 * 60 * 1000) return; // at most every 10 min
+      const cache = await caches.open('atsede-v22');
+      const root = new URL(window.APP_ROOT || '/', location.origin);
+      for (const path of paths) {
+        try {
+          const url = new URL(path, root).href;
+          const res = await fetch(url, { credentials: 'same-origin' });
+          if (res.ok && !res.redirected) await cache.put(url, res);
+        } catch (e) {}
+      }
+      localStorage.setItem('atsede_warm_at', String(Date.now()));
+    } catch (e) {}
+  }
+
+  // Queue an offline event (PAYMENT, BORROW, RETURN, BORROW_REQUEST, ADD_BOOK)
   async queueEvent(operationType, payload) {
     const uuid = this.generateUUID();
     const event = {
@@ -253,11 +408,15 @@ class OfflineEngine {
   async syncQueue() {
     if (!navigator.onLine) return;
     const events = await this.getAll('sync_queue');
-    const pending = events.filter((e) => e.status === 'pending');
+    // Oldest first: an ADD_BOOK must reach the server before a BORROW of its copy.
+    const pending = events
+      .filter((e) => e.status === 'pending')
+      .sort((a, b) => String(a.timestamp || '').localeCompare(String(b.timestamp || '')));
     if (pending.length === 0) {
       this.updatePendingBadge();
       return;
     }
+    const byUuid = new Map(pending.map((e) => [e.event_uuid, e]));
 
     try {
       const base = window.APP_BASE || './';
@@ -278,8 +437,15 @@ class OfflineEngine {
       const data = await res.json();
       if (data.success && Array.isArray(data.results)) {
         for (const r of data.results) {
+          const ev = byUuid.get(r.event_uuid);
+          const isAddBook = ev && ev.operation_type === 'ADD_BOOK';
           if (r.status === 'synced') {
             await this.delete('sync_queue', r.event_uuid);
+            // The real book now exists on the server; drop the provisional local one
+            // (refreshCache below brings the real record with its final copy codes).
+            if (isAddBook && ev.payload && ev.payload.temp_book_id) {
+              try { await this.delete('books', ev.payload.temp_book_id); } catch (err) {}
+            }
           } else if (r.status === 'rejected') {
             await this.delete('sync_queue', r.event_uuid);
             try {
@@ -287,12 +453,18 @@ class OfflineEngine {
                 event_uuid: r.event_uuid,
                 rejected_at: new Date().toISOString(),
                 reason: r.message || 'ክስተቱ ውድቅ ተደርጓል',
+                operation_type: ev ? ev.operation_type : '',
+                title: ev && ev.payload ? ev.payload.title || '' : '',
               });
             } catch (err) {}
+            if (isAddBook && ev.payload && ev.payload.temp_book_id) {
+              try { await this.delete('books', ev.payload.temp_book_id); } catch (err) {}
+            }
           }
         }
         this.updatePendingBadge();
         this.refreshCache();
+        window.dispatchEvent(new Event('atsede:synced'));
       }
     } catch (err) {
       console.warn('Sync queue failed:', err);

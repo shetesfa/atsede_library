@@ -552,7 +552,8 @@ async function submitBorrowAction() {
   if (window.offlineEngine) {
     await window.offlineEngine.queueEvent('BORROW', {
       book_id: currentBook.id,
-      copy_id: parseInt(currentCopy.id),
+      copy_id: parseInt(currentCopy.id) || 0,
+      qr_identifier: currentCopy.qr_identifier || '',
       copy_code: currentCopy.copy_code,
       member_id: parseInt(memberId),
       timestamp: new Date().toISOString()
@@ -601,7 +602,8 @@ async function executeReturnAction() {
   if (window.offlineEngine) {
     await window.offlineEngine.queueEvent('RETURN', {
       book_id: currentBook.id,
-      copy_id: parseInt(currentCopy.id),
+      copy_id: parseInt(currentCopy.id) || 0,
+      qr_identifier: currentCopy.qr_identifier || '',
       copy_code: currentCopy.copy_code,
       timestamp: new Date().toISOString()
     });
@@ -635,7 +637,8 @@ async function requestMemberBorrow() {
   if (window.offlineEngine) {
     await window.offlineEngine.queueEvent('REQUEST', {
       book_id: currentBook.id,
-      copy_id: parseInt(currentCopy.id),
+      copy_id: parseInt(currentCopy.id) || 0,
+      qr_identifier: currentCopy.qr_identifier || '',
       copy_code: currentCopy.copy_code,
       timestamp: new Date().toISOString()
     });

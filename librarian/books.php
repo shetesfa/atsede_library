@@ -258,6 +258,9 @@ include __DIR__ . '/../includes/header.php';
   <button class="btn btn-gold" onclick="openSheet('book-sheet')"><i class="bi bi-plus-lg"></i> <?= __('add') ?></button>
 </div>
 
+<!-- Books added while offline, waiting to sync (filled by JS from IndexedDB) -->
+<div id="offline-pending-books"></div>
+
 <?php if ($filterCategory): ?>
 <div class="card card-pad mb-3" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;">
   <span><strong>ምድብ፦</strong> <?= e($filterCategory['name']) ?></span>
@@ -333,7 +336,7 @@ include __DIR__ . '/../includes/header.php';
   <div class="sheet">
     <div class="sheet-handle"></div>
     <div class="sheet-title"><?= $editBook ? 'መጽሐፍ አርም' : 'አዲስ መጽሐፍ ጨምር' ?></div>
-    <form method="post" enctype="multipart/form-data">
+    <form method="post" enctype="multipart/form-data" id="book-form">
       <?= csrf_field() ?>
       <input type="hidden" name="book_id" value="<?= (int)($editBook['id'] ?? 0) ?>">
       <div class="row g-2">
@@ -543,11 +546,148 @@ const preview = document.getElementById('code-preview');
 function updateCodePreview() {
   if (!catSelect || !preview || !catSelect.value) { if(preview) preview.textContent=''; return; }
   fetch(window.APP_BASE + 'ajax/preview_codes.php?category_id=' + catSelect.value + '&quantity=' + (qtyInput.value || 1))
-    .then(r => r.json()).then(d => { preview.textContent = d.codes && d.codes.length ? 'የሚፈጠሩ ኮዶች: ' + d.codes.join(', ') : ''; });
+    .then(r => r.json()).then(d => { preview.textContent = d.codes && d.codes.length ? 'የሚፈጠሩ ኮዶች: ' + d.codes.join(', ') : ''; })
+    .catch(() => {
+      // Offline: compute provisional codes from the local cache
+      if (!window.offlineEngine) return;
+      window.offlineEngine.provisionalCodes(catSelect.value, parseInt(qtyInput.value, 10) || 1)
+        .then(codes => { preview.textContent = 'ጊዜያዊ ኮዶች (ከመስመር ውጭ): ' + codes.join(', '); });
+    });
 }
 if (catSelect) { catSelect.addEventListener('change', updateCodePreview); qtyInput.addEventListener('input', debounce(updateCodePreview, 250)); }
 
 
+</script>
+
+
+<script src="<?= $base ?>assets/js/qrcode.min.js"></script>
+<script>
+/* ------------------------------------------------------------------
+   OFFLINE ADD-BOOK
+   When there is no network, "Add book" saves the book on this device
+   (IndexedDB), makes its QR codes scannable immediately, and uploads it
+   to the server (with the cover) as soon as the connection returns.
+------------------------------------------------------------------- */
+const QR_URL_TEMPLATE = <?= json_encode(get_qr_url('__QR__')) ?>;
+const bookForm = document.getElementById('book-form');
+
+function qrPayloadFor(qrId) {
+  return location.origin + QR_URL_TEMPLATE.replace('__QR__', encodeURIComponent(qrId));
+}
+function escHtml(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+if (bookForm) {
+  bookForm.addEventListener('submit', async function (ev) {
+    if (navigator.onLine) return;               // normal online flow, untouched
+    ev.preventDefault();
+
+    const fd = new FormData(bookForm);
+    if ((parseInt(fd.get('book_id'), 10) || 0) > 0) {
+      toast('ከመስመር ውጭ ሲሆኑ አዲስ መጽሐፍ ብቻ መጨመር ይቻላል፤ ማስተካከል ኔትዎርክ ሲኖር ይሞክሩ።', 'warning');
+      return;
+    }
+    if (!window.offlineEngine) { toast('የኦፍላይን ሞተር አልተጫነም፤ ገጹን እንደገና ይክፈቱ።', 'danger'); return; }
+
+    const title  = (fd.get('title') || '').toString().trim();
+    const author = (fd.get('author') || '').toString().trim();
+
+    // Duplicate check against the local cache (the server cannot be asked)
+    const cached = await window.offlineEngine.getAll('books');
+    const dup = cached.find(b => (b.title || '').trim().toLowerCase() === title.toLowerCase()
+                              && (b.author || '').trim().toLowerCase() === (author || 'ጸሃፊው አልተገለጸም').toLowerCase());
+    if (dup && !confirm('«' + title + '» ቀደም ሲል ተመዝግቧል። እንደ የተለየ መዝገብ ይጨመር?')) return;
+
+    const catSel = bookForm.querySelector('[name=category_id]');
+    const shelfSel = bookForm.querySelector('[name=shelf_id]');
+    const fields = {
+      title, author,
+      category_id: fd.get('category_id'),
+      quantity: fd.get('quantity'),
+      year: fd.get('year'),
+      publisher: fd.get('publisher'),
+      price: fd.get('price'),
+      room_id: fd.get('room_id'),
+      shelf_id: fd.get('shelf_id'),
+      position: fd.get('position'),
+      borrow_status: fd.get('borrow_status'),
+      is_borrowable: fd.get('is_borrowable'),
+      non_borrowable_reason: fd.get('non_borrowable_reason'),
+      description: fd.get('description'),
+    };
+    const labels = {
+      category_name: catSel && catSel.selectedIndex >= 0 ? catSel.options[catSel.selectedIndex].text : '',
+      shelf_name: shelfSel && shelfSel.value !== '0' && shelfSel.selectedIndex >= 0 ? shelfSel.options[shelfSel.selectedIndex].text : '',
+    };
+    const coverFile = bookForm.querySelector('[name=cover_image]').files[0] || null;
+
+    const btn = bookForm.querySelector('[name=save_book]');
+    if (btn) btn.disabled = true;
+    try {
+      const book = await window.offlineEngine.addBookOffline(fields, coverFile, labels);
+      closeSheet('book-sheet');
+      bookForm.reset();
+      const prev = document.getElementById('code-preview'); if (prev) prev.textContent = '';
+      toast('✓ መጽሐፉ በመሣሪያው ላይ ተቀምጧል (ኮዶች፦ ' + book.copies.map(c => c.copy_code).join(', ') + ')። ኔትዎርክ ሲመለስ ይላካል።', 'success');
+      renderPendingBooks();
+    } catch (e) {
+      console.error(e);
+      toast('መጽሐፉን በመሣሪያው ላይ ማስቀመጥ አልተቻለም።', 'danger');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+}
+
+async function renderPendingBooks() {
+  const box = document.getElementById('offline-pending-books');
+  if (!box || !window.offlineEngine) return;
+  let pending = [];
+  try { await window.offlineEngine.openDB(); pending = await window.offlineEngine.getPendingBooks(); } catch (e) {}
+  if (!pending.length) { box.innerHTML = ''; return; }
+
+  box.innerHTML = '<div class="card card-pad mb-3" style="border:1.5px dashed var(--gold);">' +
+    '<div class="d-flex justify-content-between align-items-center mb-2">' +
+    '<strong><i class="bi bi-cloud-arrow-up"></i> በመሣሪያው ላይ የተጨመሩ (ገና ያልተላኩ) ' + pending.length + '</strong>' +
+    '<span>' +
+    '<button type="button" class="btn btn-outline btn-sm me-1" onclick="printPendingLabels()"><i class="bi bi-printer"></i> QR አትም</button>' +
+    '<button type="button" class="btn btn-gold btn-sm" onclick="window.offlineEngine.syncQueue().then(renderPendingBooks)"><i class="bi bi-arrow-repeat"></i> አሁን ላክ</button>' +
+    '</span></div>' +
+    '<div class="text-muted mb-2" style="font-size:.78rem;">የመጨረሻው የቅጂ ኮድ ሲላክ በአገልጋዩ ይረጋገጣል፤ የQR ኮዱ ግን አይለወጥም።</div>' +
+    pending.map(b => '<div style="padding:8px 0;border-top:1px solid var(--line);">' +
+      '<div><strong>' + escHtml(b.title) + '</strong> — ' + escHtml(b.author) + ' <span class="badge" style="background:var(--gold);color:var(--navy);">ያልተመሳሰለ</span></div>' +
+      '<div class="d-flex flex-wrap gap-3 mt-2">' + b.copies.map((c, i) =>
+        '<div style="text-align:center;font-size:.72rem;"><div class="pend-qr" data-qr="' + escHtml(c.qr_identifier) + '" id="pq-' + escHtml(b.id) + '-' + i + '"></div>' +
+        '<strong>' + escHtml(c.copy_code) + '</strong></div>').join('') + '</div></div>').join('') +
+    '</div>';
+
+  box.querySelectorAll('.pend-qr').forEach(el => {
+    if (typeof QRCode === 'undefined') return;
+    new QRCode(el, { text: qrPayloadFor(el.dataset.qr), width: 96, height: 96, correctLevel: QRCode.CorrectLevel.M });
+  });
+}
+
+async function printPendingLabels() {
+  const imgs = [];
+  document.querySelectorAll('#offline-pending-books .pend-qr').forEach(el => {
+    const cv = el.querySelector('canvas');
+    const label = el.parentElement.querySelector('strong');
+    if (cv) imgs.push({ src: cv.toDataURL('image/png'), code: label ? label.textContent : '' });
+  });
+  const w = window.open('', '_blank');
+  if (!w) { toast('የማተሚያ መስኮት ታግዷል፤ ፍቀዱ።', 'warning'); return; }
+  w.document.write('<html><head><title>QR</title><style>body{font-family:sans-serif}.l{display:inline-block;margin:8px;padding:8px;border:1px dashed #999;text-align:center;font-size:12px}img{width:110px;height:110px}</style></head><body>' +
+    imgs.map(i => '<div class="l"><img src="' + i.src + '"><br><b>' + escHtml(i.code) + '</b></div>').join('') +
+    '</body></html>');
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 300);
+}
+
+window.addEventListener('load', () => { setTimeout(renderPendingBooks, 150); });
+window.addEventListener('atsede:synced', renderPendingBooks);
+window.addEventListener('online', () => setTimeout(renderPendingBooks, 3000));
 </script>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>

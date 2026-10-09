@@ -804,7 +804,7 @@ CREATE TABLE `sync_events` (
   `operation_type` varchar(50) NOT NULL,
   `entity_id` varchar(64) DEFAULT NULL,
   `payload` longtext NOT NULL,
-  `status` enum('pending','synced','failed') NOT NULL DEFAULT 'pending',
+  `status` enum('pending','synced','failed','rejected') NOT NULL DEFAULT 'pending',
   `retry_count` int(11) NOT NULL DEFAULT 0,
   `error_message` text DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),

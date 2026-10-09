@@ -296,4 +296,99 @@ class OfflineSyncTest extends TestCase
         $copyRow = mysqli_fetch_assoc($copyRes);
         $this->assertEquals('available', $copyRow['status']);
     }
+
+    // ---------------------------------------------------------------
+    // ADD_BOOK (books added by staff while offline)
+    // ---------------------------------------------------------------
+
+    private function offlineBookPayload(int $categoryId, array $qrIds, array $over = []): array
+    {
+        return array_merge([
+            'temp_book_id'  => 'tmp-test',
+            'title'         => 'Offline Added ' . uniqid(),
+            'author'        => '',
+            'category_id'   => $categoryId,
+            'quantity'      => count($qrIds),
+            'borrow_status' => 'available',
+            'is_borrowable' => 1,
+            'copies'        => array_map(fn($q) => ['qr_identifier' => $q], $qrIds),
+            'cover_data'    => null,
+        ], $over);
+    }
+
+    private function anyCategoryId(): int
+    {
+        $row = $this->conn->query("SELECT id FROM categories LIMIT 1")->fetch_assoc();
+        return (int)$row['id'];
+    }
+
+    public function testMemberCannotAddBookOffline()
+    {
+        $memberUser = $this->create_user('member', 'active');
+        $this->create_member($memberUser['id']);
+        $this->login_as('member', $memberUser['id']);
+
+        $payload = $this->offlineBookPayload($this->anyCategoryId(), ['ATS-COPY-TESTMEM001']);
+        $res = $this->postSync(['events' => [[
+            'event_uuid' => 'addbook-member-' . uniqid(), 'operation_type' => 'ADD_BOOK', 'payload' => $payload,
+        ]]]);
+
+        $this->assertSame('rejected', $res['results'][0]['status']);
+        $n = $this->conn->query("SELECT COUNT(*) c FROM books WHERE title = '" . $this->conn->real_escape_string($payload['title']) . "'")->fetch_assoc()['c'];
+        $this->assertSame(0, (int)$n);
+    }
+
+    public function testLibrarianAddBookOfflineKeepsClientQrIdentifiers()
+    {
+        $this->login_as('librarian');
+        $qr = ['ATS-COPY-T' . strtoupper(substr(md5(uniqid()), 0, 9)), 'ATS-COPY-T' . strtoupper(substr(md5(uniqid()), 0, 9))];
+        $payload = $this->offlineBookPayload($this->anyCategoryId(), $qr);
+
+        $uuid = 'addbook-lib-' . uniqid();
+        $res = $this->postSync(['events' => [['event_uuid' => $uuid, 'operation_type' => 'ADD_BOOK', 'payload' => $payload]]]);
+        $this->assertSame('synced', $res['results'][0]['status']);
+
+        $book = $this->conn->query("SELECT * FROM books WHERE title = '" . $this->conn->real_escape_string($payload['title']) . "'")->fetch_assoc();
+        $this->assertNotNull($book);
+        $this->assertSame(2, (int)$book['quantity']);
+
+        $copies = $this->conn->query("SELECT qr_identifier FROM book_copies WHERE book_id = " . (int)$book['id'] . " ORDER BY id")->fetch_all(MYSQLI_ASSOC);
+        $this->assertSame($qr, array_column($copies, 'qr_identifier'), 'QR codes printed offline must stay valid');
+
+        // A retried event must not create a second book
+        $this->postSync(['events' => [['event_uuid' => $uuid, 'operation_type' => 'ADD_BOOK', 'payload' => $payload]]]);
+        $count = $this->conn->query("SELECT COUNT(*) c FROM books WHERE title = '" . $this->conn->real_escape_string($payload['title']) . "'")->fetch_assoc()['c'];
+        $this->assertSame(1, (int)$count);
+    }
+
+    public function testAddBookOfflineRejectsUnknownCategory()
+    {
+        $this->login_as('librarian');
+        $payload = $this->offlineBookPayload(999999, ['ATS-COPY-TESTBAD001']);
+        $res = $this->postSync(['events' => [[
+            'event_uuid' => 'addbook-badcat-' . uniqid(), 'operation_type' => 'ADD_BOOK', 'payload' => $payload,
+        ]]]);
+        $this->assertSame('rejected', $res['results'][0]['status']);
+    }
+
+    public function testBorrowOfflineCreatedCopyByQrIdentifier()
+    {
+        $this->login_as('librarian');
+        $memberUser = $this->create_user('member', 'active');
+        $memberId = $this->create_member($memberUser['id']);
+
+        $qr = 'ATS-COPY-T' . strtoupper(substr(md5(uniqid()), 0, 9));
+        $payload = $this->offlineBookPayload($this->anyCategoryId(), [$qr]);
+
+        $res = $this->postSync(['events' => [
+            ['event_uuid' => 'ab-' . uniqid(), 'operation_type' => 'ADD_BOOK', 'payload' => $payload],
+            ['event_uuid' => 'bw-' . uniqid(), 'operation_type' => 'BORROW',
+             'payload' => ['copy_id' => 0, 'qr_identifier' => $qr, 'member_id' => $memberId]],
+        ]]);
+
+        $this->assertSame('synced', $res['results'][0]['status']);
+        $this->assertSame('synced', $res['results'][1]['status'], $res['results'][1]['message'] ?? '');
+        $status = $this->conn->query("SELECT status FROM book_copies WHERE qr_identifier = '" . $this->conn->real_escape_string($qr) . "'")->fetch_assoc()['status'];
+        $this->assertSame('borrowed', $status);
+    }
 }

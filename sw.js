@@ -1,12 +1,16 @@
 /* =========================================================
-   ATSEDE LIBRARY — sw.js
+   ATSEDE LIBRARY — sw.js  (v22)
    Full Offline PWA Service Worker:
-   - Dynamic Offline Navigation (Never bounces unvisited pages to dashboard!)
-   - Independent Covers Cache for 100% offline cover display
-   - Background Sync for offline borrow / return / payment
+   - Self-hosted vendor assets (Bootstrap JS, icons, fonts) are precached,
+     so the UI is complete with NO network.
+   - Navigation fallback ignores the query string (book.php?id=9 -> cached
+     book.php shell) and never returns a redirected response (browsers
+     reject those for navigations).
+   - Independent covers cache for offline cover display.
+   - Background Sync for offline borrow / return / payment / add-book.
    ========================================================= */
 
-const CACHE_NAME = 'atsede-v21';
+const CACHE_NAME = 'atsede-v22';
 const COVERS_CACHE = 'atsede-covers-v2';
 const OFFLINE_URL = './offline.php';
 
@@ -26,6 +30,19 @@ const PRECACHE = [
   './assets/js/offline-engine.js',
   './assets/js/jsQR.min.js',
   './assets/js/qrcode.min.js',
+  './assets/lib/bootstrap/bootstrap.bundle.min.js',
+  './assets/lib/bootstrap-icons/bootstrap-icons.css',
+  './assets/lib/bootstrap-icons/fonts/bootstrap-icons.woff2',
+  './assets/lib/bootstrap-icons/fonts/bootstrap-icons.woff',
+  './assets/lib/fonts/fonts.css',
+  './assets/lib/fonts/noto-sans-ethiopic-ethiopic-400-normal.woff2',
+  './assets/lib/fonts/noto-sans-ethiopic-ethiopic-500-normal.woff2',
+  './assets/lib/fonts/noto-sans-ethiopic-ethiopic-600-normal.woff2',
+  './assets/lib/fonts/noto-sans-ethiopic-ethiopic-700-normal.woff2',
+  './assets/lib/fonts/noto-serif-ethiopic-ethiopic-500-normal.woff2',
+  './assets/lib/fonts/noto-serif-ethiopic-ethiopic-600-normal.woff2',
+  './assets/lib/fonts/noto-serif-ethiopic-ethiopic-700-normal.woff2',
+  './assets/lib/fonts/ibm-plex-mono-latin-500-normal.woff2',
   './assets/icons/icon-512.png',
   './assets/icons/icon-192.png',
   './assets/icons/icon-maskable-512.png',
@@ -35,6 +52,18 @@ const PRECACHE = [
   './assets/shelf_3d.jpg',
 ];
 
+// A redirected Response cannot be served to a navigation request.
+// Rebuild it as a plain response so it is always safe to return.
+async function plain(res) {
+  if (!res || !res.redirected) return res;
+  const body = await res.clone().blob();
+  return new Response(body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers: res.headers,
+  });
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
@@ -42,7 +71,7 @@ self.addEventListener('install', (event) => {
         try {
           await cache.add(item);
         } catch (err) {
-          // Graceful fallback for non-fatal precache misses
+          // Non-fatal precache miss (e.g. page needs login)
         }
       }
     }).then(() => self.skipWaiting())
@@ -68,60 +97,38 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
 
+  // Never intercept the live API endpoints
+  if (url.pathname.includes('/ajax/')) return;
+
   // 1. Navigation requests (HTML pages)
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req).then((res) => {
-        // Cache successful page response
+        // Cache successful page responses (opaque redirects are not ok)
         if (res.ok) {
           const copy = res.clone();
           caches.open(CACHE_NAME).then((c) => c.put(req, copy));
         }
         return res;
       }).catch(async () => {
-        // Offline Fallback Handling:
-        // A. Exact URL match (e.g. visited while online)
+        // A. Exact URL match (page visited while online)
         const exact = await caches.match(req);
-        if (exact) return exact;
+        if (exact) return plain(exact);
 
-        // B. Route-specific Shells (CRITICAL: Never bounce to index.php!)
-        if (url.pathname.includes('book.php')) {
-          const bookShell = await caches.match('./book.php') || await caches.match('/library/book.php');
-          if (bookShell) return bookShell;
+        // B. Same page, different query string
+        //    (book.php?id=9 -> cached book.php, books.php?page=2 -> books.php)
+        const loose = await caches.match(req, { ignoreSearch: true });
+        if (loose) return plain(loose);
+
+        // C. Directory URL -> index
+        if (url.pathname.endsWith('/')) {
+          const idx = await caches.match(url.pathname + 'index.php', { ignoreSearch: true })
+            || await caches.match('./index.php');
+          if (idx) return plain(idx);
         }
 
-        if (url.pathname.includes('search.php')) {
-          const searchShell = await caches.match('./search.php') || await caches.match('/library/search.php');
-          if (searchShell) return searchShell;
-        }
-
-        if (url.pathname.includes('scan.php')) {
-          const scanShell = await caches.match('./scan.php') || await caches.match('/library/scan.php');
-          if (scanShell) return scanShell;
-        }
-
-        if (url.pathname.includes('shelf_3d.php')) {
-          const shelfShell = await caches.match('./shelf_3d.php') || await caches.match('/library/shelf_3d.php');
-          if (shelfShell) return shelfShell;
-        }
-
-        if (url.pathname.includes('login.php')) {
-          const loginShell = await caches.match('./login.php') || await caches.match('/library/login.php');
-          if (loginShell) return loginShell;
-        }
-
-        if (url.pathname.includes('register.php')) {
-          const regShell = await caches.match('./register.php') || await caches.match('/library/register.php');
-          if (regShell) return regShell;
-        }
-
-        if (url.pathname.endsWith('/library/') || url.pathname.endsWith('/library') || url.pathname.endsWith('index.php')) {
-          const indexCached = await caches.match('./index.php') || await caches.match('./');
-          if (indexCached) return indexCached;
-        }
-
-        // C. Universal Offline Fallback (Only if completely unknown route)
-        return (await caches.match(OFFLINE_URL)) || (await caches.match('./index.php'));
+        // D. Universal offline fallback (completely unknown route)
+        return plain((await caches.match(OFFLINE_URL)) || (await caches.match('./index.php')));
       })
     );
     return;
@@ -134,7 +141,8 @@ self.addEventListener('fetch', (event) => {
         if (cached) return cached;
 
         return fetch(req).then((res) => {
-          if (res.ok) {
+          // opaque (no-cors cross-origin) cover responses are fine to keep
+          if (res.ok || res.type === 'opaque') {
             const copy = res.clone();
             caches.open(COVERS_CACHE).then((c) => c.put(req, copy));
           }
@@ -148,18 +156,25 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. Static Assets (CSS, JS, Fonts)
-  if (req.destination === 'style' || req.destination === 'script' || req.destination === 'font' || url.pathname.endsWith('.css') || url.pathname.endsWith('.js')) {
+  // 3. Static Assets (CSS, JS, Fonts) — cache-first, query string ignored
+  //    as a fallback so a changed ?v= never leaves the page unstyled offline.
+  if (req.destination === 'style' || req.destination === 'script' || req.destination === 'font' ||
+      url.pathname.endsWith('.css') || url.pathname.endsWith('.js') || url.pathname.endsWith('.woff2')) {
     event.respondWith(
-      caches.match(req).then((cached) => {
+      caches.match(req).then(async (cached) => {
         if (cached) return cached;
-        return fetch(req).then((res) => {
-          if (res.ok) {
+        try {
+          const res = await fetch(req);
+          if (res.ok || res.type === 'opaque') {
             const copy = res.clone();
             caches.open(CACHE_NAME).then((c) => c.put(req, copy));
           }
           return res;
-        }).catch(() => cached);
+        } catch (e) {
+          const loose = await caches.match(req, { ignoreSearch: true });
+          if (loose) return loose;
+          throw e;
+        }
       })
     );
     return;
