@@ -20,10 +20,10 @@ mysqli_stmt_execute($stmt);
 $book = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
 
 if (!$book) {
-    http_response_code(404);
-    $pageTitle = 'አልተገኘም';
+    $pageTitle = 'የመጽሐፍ ዝርዝር';
     include __DIR__ . '/includes/header.php';
-    echo '<div class="empty-state"><i class="bi bi-question-circle"></i><h4>መጽሐፉ አልተገኘም</h4><a href="' . $base . 'search.php" class="btn btn-navy">ወደ ፍለጋ ተመለስ</a></div>';
+    echo '<div id="book-offline-container"></div>';
+    echo '<div id="book-not-found" class="empty-state" style="display:none;"><i class="bi bi-question-circle"></i><h4>መጽሐፉ አልተገኘም</h4><a href="' . $base . 'search.php" class="btn btn-navy">ወደ ፍለጋ ተመለስ</a></div>';
     include __DIR__ . '/includes/footer.php';
     exit;
 }
@@ -141,6 +141,8 @@ $pageTitle = $book['title'];
 $activeKey = 'browse';
 include __DIR__ . '/includes/header.php';
 ?>
+
+<div id="book-server-container" data-book-id="<?= (int)$book['id'] ?>">
 
 <div class="d-flex justify-content-between align-items-center mb-2">
   <a href="javascript:history.back()" class="text-muted" style="font-size:.85rem;display:inline-flex;align-items:center;gap:4px;">
@@ -483,5 +485,8 @@ document.getElementById('copyQrModal').addEventListener('click', function(e) {
     </div>
   </div>
 <?php endif; ?>
+
+</div><!-- /#book-server-container -->
+<div id="book-offline-container" style="display:none;"></div>
 
 <?php include __DIR__ . '/includes/footer.php'; ?>

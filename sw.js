@@ -1,17 +1,25 @@
 /* =========================================================
    ATSEDE LIBRARY — sw.js
-   Offline shell caching + Web Push display.
+   Full Offline PWA Service Worker:
+   - Dynamic Offline Navigation (Never bounces unvisited pages to dashboard!)
+   - Independent Covers Cache for 100% offline cover display
+   - Background Sync for offline borrow / return / payment
    ========================================================= */
 
-const CACHE_NAME = 'atsede-v18';
+const CACHE_NAME = 'atsede-v21';
+const COVERS_CACHE = 'atsede-covers-v2';
 const OFFLINE_URL = './offline.php';
+
 const PRECACHE = [
   './',
   './index.php',
-  './scan.php',
-  './offline.php',
-  './shelf_3d.php',
+  './book.php',
   './search.php',
+  './scan.php',
+  './shelf_3d.php',
+  './login.php',
+  './register.php',
+  './offline.php',
   './qr.php',
   './assets/css/style.css',
   './assets/js/app.js',
@@ -20,6 +28,9 @@ const PRECACHE = [
   './assets/js/qrcode.min.js',
   './assets/icons/icon-512.png',
   './assets/icons/icon-192.png',
+  './assets/icons/icon-maskable-512.png',
+  './assets/icons/icon-maskable-192.png',
+  './uploads/logo.png',
   './assets/shelf_canvas.jpg',
   './assets/shelf_3d.jpg',
 ];
@@ -41,71 +52,136 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+      Promise.all(
+        keys
+          .filter((k) => k !== CACHE_NAME && k !== COVERS_CACHE)
+          .map((k) => caches.delete(k))
+      )
     ).then(() => self.clients.claim())
   );
 });
 
-// Network-first for navigations; on offline, always serve the matching cached page (Same View Always)
+// Fetch interception
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
 
+  const url = new URL(req.url);
+
+  // 1. Navigation requests (HTML pages)
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((c) => c.put(req, copy));
+        // Cache successful page response
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(req, copy));
+        }
         return res;
       }).catch(async () => {
-        // 1. Try exact match from cache
-        const cached = await caches.match(req);
-        if (cached) return cached;
+        // Offline Fallback Handling:
+        // A. Exact URL match (e.g. visited while online)
+        const exact = await caches.match(req);
+        if (exact) return exact;
 
-        const url = new URL(req.url);
-
-        // 2. Specific routes fallback to their cached equivalents
-        if (url.pathname.includes('scan.php')) {
-          const scanCached = await caches.match('./scan.php');
-          if (scanCached) return scanCached;
-        }
-        if (url.pathname.includes('shelf_3d.php')) {
-          const shelfCached = await caches.match('./shelf_3d.php');
-          if (shelfCached) return shelfCached;
-        }
-        if (url.pathname.includes('search.php')) {
-          const searchCached = await caches.match('./search.php');
-          if (searchCached) return searchCached;
-        }
+        // B. Route-specific Shells (CRITICAL: Never bounce to index.php!)
         if (url.pathname.includes('book.php')) {
-          const bookCached = await caches.match(req);
-          if (bookCached) return bookCached;
+          const bookShell = await caches.match('./book.php') || await caches.match('/library/book.php');
+          if (bookShell) return bookShell;
         }
 
-        // 3. Root navigation fallback to index.php (Always same view as online!)
-        const indexCached = await caches.match('./index.php') || await caches.match('./');
-        if (indexCached) return indexCached;
+        if (url.pathname.includes('search.php')) {
+          const searchShell = await caches.match('./search.php') || await caches.match('/library/search.php');
+          if (searchShell) return searchShell;
+        }
 
-        return caches.match(OFFLINE_URL);
+        if (url.pathname.includes('scan.php')) {
+          const scanShell = await caches.match('./scan.php') || await caches.match('/library/scan.php');
+          if (scanShell) return scanShell;
+        }
+
+        if (url.pathname.includes('shelf_3d.php')) {
+          const shelfShell = await caches.match('./shelf_3d.php') || await caches.match('/library/shelf_3d.php');
+          if (shelfShell) return shelfShell;
+        }
+
+        if (url.pathname.includes('login.php')) {
+          const loginShell = await caches.match('./login.php') || await caches.match('/library/login.php');
+          if (loginShell) return loginShell;
+        }
+
+        if (url.pathname.includes('register.php')) {
+          const regShell = await caches.match('./register.php') || await caches.match('/library/register.php');
+          if (regShell) return regShell;
+        }
+
+        if (url.pathname.endsWith('/library/') || url.pathname.endsWith('/library') || url.pathname.endsWith('index.php')) {
+          const indexCached = await caches.match('./index.php') || await caches.match('./');
+          if (indexCached) return indexCached;
+        }
+
+        // C. Universal Offline Fallback (Only if completely unknown route)
+        return (await caches.match(OFFLINE_URL)) || (await caches.match('./index.php'));
       })
     );
     return;
   }
 
-  if (req.destination === 'style' || req.destination === 'script' || req.destination === 'image') {
+  // 2. Images (Book covers, logos, icons, thumbnails)
+  if (req.destination === 'image' || url.pathname.includes('/uploads/') || url.hostname.includes('raw.githubusercontent.com')) {
     event.respondWith(
-      caches.match(req).then((cached) => cached || fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((c) => c.put(req, copy));
-        return res;
-      }).catch(() => cached))
+      caches.match(req).then((cached) => {
+        if (cached) return cached;
+
+        return fetch(req).then((res) => {
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(COVERS_CACHE).then((c) => c.put(req, copy));
+          }
+          return res;
+        }).catch(async () => {
+          // Fallback image if totally offline and image not cached
+          return (await caches.match('./uploads/logo.png')) || (await caches.match('./assets/icons/icon-512.png'));
+        });
+      })
+    );
+    return;
+  }
+
+  // 3. Static Assets (CSS, JS, Fonts)
+  if (req.destination === 'style' || req.destination === 'script' || req.destination === 'font' || url.pathname.endsWith('.css') || url.pathname.endsWith('.js')) {
+    event.respondWith(
+      caches.match(req).then((cached) => {
+        if (cached) return cached;
+        return fetch(req).then((res) => {
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(req, copy));
+          }
+          return res;
+        }).catch(() => cached);
+      })
+    );
+    return;
+  }
+});
+
+// ---------- Background Sync API ----------
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-library-events' || event.tag === 'sync-queue') {
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window' }).then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ type: 'TRIGGER_BACKGROUND_SYNC' });
+        });
+      })
     );
   }
 });
 
-// ---------- Push notifications (works even when the app/tab is closed) ----------
+// ---------- Push Notifications ----------
 self.addEventListener('push', (event) => {
-  let data = { title: 'Atsede Library', body: 'You have a new update.', link: './index.php' };
+  let data = { title: 'አጸደ ቤተ-መጻሕፍት', body: 'አዲስ መልእክት ደርሶዎታል።', link: './index.php' };
   if (event.data) {
     try { data = { ...data, ...event.data.json() }; } catch (e) { data.body = event.data.text(); }
   }

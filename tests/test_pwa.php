@@ -1,6 +1,6 @@
 <?php
-// Test PWA Manifest and Service Worker from localhost HTTP server
-$ch = curl_init('http://localhost/atsede_library/assets/manifest.php');
+$baseUrl = 'http://localhost/' . basename(dirname(__DIR__)) . '/';
+$ch = curl_init($baseUrl . 'assets/manifest.php');
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 $manifestBody = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -32,7 +32,7 @@ if ($json) {
 }
 
 // Test Service worker
-$ch = curl_init('http://localhost/atsede_library/sw.js');
+$ch = curl_init($baseUrl . 'sw.js');
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 $swBody = curl_exec($ch);
 $swCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -42,7 +42,7 @@ echo "sw.js contains fetch handler: " . (strpos($swBody, "addEventListener('fetc
 echo "sw.js contains icon-192: " . (strpos($swBody, 'icon-192.png') !== false ? "YES" : "NO") . "\n";
 
 // Test Index.php manifest link
-$ch = curl_init('http://localhost/atsede_library/index.php');
+$ch = curl_init($baseUrl . 'index.php');
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 $indexBody = curl_exec($ch);
 curl_close($ch);

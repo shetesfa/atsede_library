@@ -11,6 +11,8 @@ if ($appRoot === '//') $appRoot = '/';
 // Always use calibrated, true-dimension PNG icons for 100% Chrome PWA install compliance
 $icon512 = $appRoot . 'assets/icons/icon-512.png';
 $icon192 = $appRoot . 'assets/icons/icon-192.png';
+$iconMaskable512 = $appRoot . 'assets/icons/icon-maskable-512.png';
+$iconMaskable192 = $appRoot . 'assets/icons/icon-maskable-192.png';
 
 $shortName = get_setting($conn, 'library_short_name', 'ቤተ ይትባረክ');
 
@@ -32,8 +34,8 @@ echo json_encode([
     'capture_links' => 'existing_client_navigate',
     'icons' => [
         ['src' => $icon512, 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any'],
-        ['src' => $icon512, 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'maskable'],
         ['src' => $icon192, 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any'],
-        ['src' => $icon192, 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'maskable'],
+        ['src' => $iconMaskable512, 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'maskable'],
+        ['src' => $iconMaskable192, 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'maskable'],
     ],
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

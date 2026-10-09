@@ -1,10 +1,10 @@
 <?php
 /**
  * ajax/offline_bootstrap.php
- * Provides full offline cache payload for PWA and scanner.
- * Strict role-gating: only staff receive member rosters;
- * Book copies are structured as clean typed objects {id, copy_code, qr_identifier, status, position};
- * Safe user profile lookups without assuming session state.
+ * Provides full offline cache payload for PWA, scanner, and catalog.
+ * - Publicly available for books, copies, categories, shelves, rooms, and settings.
+ * - Strict role-gating: only staff receive member rosters and full loan details.
+ * - Includes book cover_image for complete offline visual media caching.
  */
 
 require_once __DIR__ . '/../config.php';
@@ -14,44 +14,58 @@ global $conn;
 
 header('Content-Type: application/json; charset=utf-8');
 
-if (!is_logged_in()) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'error' => 'ያልተፈቀደ መግቢያ፤ እባክዎ እንደገና ይግቡ።'], JSON_UNESCAPED_UNICODE);
-    if (!defined('PHPUNIT_RUNNING')) exit;
-    return;
+$isAuth = is_logged_in();
+$user = $isAuth ? current_user() : null;
+$userId = $user ? (int)$user['id'] : 0;
+$role = 'guest';
+
+if ($user) {
+    $uStmt = mysqli_prepare($conn, "SELECT id, full_name, username, phone, role, status FROM users WHERE id = ? LIMIT 1");
+    if ($uStmt) {
+        mysqli_stmt_bind_param($uStmt, 'i', $userId);
+        mysqli_stmt_execute($uStmt);
+        $dbUser = mysqli_fetch_assoc(mysqli_stmt_get_result($uStmt)) ?: $user;
+        mysqli_stmt_close($uStmt);
+        $role = $dbUser['role'] ?? 'member';
+    }
 }
 
-$user = current_user();
-$userId = (int)$user['id'];
-
-// Always verify fresh user profile and role from database
-$uStmt = mysqli_prepare($conn, "SELECT id, full_name, username, phone, role, status FROM users WHERE id = ? LIMIT 1");
-mysqli_stmt_bind_param($uStmt, 'i', $userId);
-mysqli_stmt_execute($uStmt);
-$dbUser = mysqli_fetch_assoc(mysqli_stmt_get_result($uStmt)) ?: $user;
-mysqli_stmt_close($uStmt);
-
-$role = $dbUser['role'] ?? 'member';
 $currentMonth = current_billing_month();
 $minMonthly = get_minimum_monthly_payment($conn);
+$siteName = library_name($conn);
+$logoUrl = library_logo_url();
 
 $data = [
     'success' => true,
     'timestamp' => date('Y-m-d H:i:s'),
-    'user' => [
+    'user' => $user ? [
         'id'        => $userId,
         'full_name' => $dbUser['full_name'] ?? $dbUser['username'] ?? '',
+        'username'  => $dbUser['username'] ?? '',
         'role'      => $role,
         'phone'     => $dbUser['phone'] ?? ''
-    ],
+    ] : null,
     'settings' => [
+        'library_name'             => $siteName,
+        'library_logo'             => $logoUrl,
         'minimum_monthly_payment'  => $minMonthly,
         'current_billing_month'     => $currentMonth,
         'current_billing_month_am'  => format_billing_month_amharic($currentMonth)
     ]
 ];
 
-// 1. Fetch all book copies in clean, structured form (no fragile GROUP_CONCAT)
+// 1. Fetch Categories for offline category navigation
+$categories = [];
+$catRes = mysqli_query($conn, "SELECT id, name, description, icon FROM categories ORDER BY name ASC");
+if ($catRes) {
+    while ($c = mysqli_fetch_assoc($catRes)) {
+        $c['id'] = (int)$c['id'];
+        $categories[] = $c;
+    }
+}
+$data['categories'] = $categories;
+
+// 2. Fetch all book copies
 $copiesByBook = [];
 $copiesRes = mysqli_query($conn, "
     SELECT id, book_id, copy_code, qr_identifier, status 
@@ -70,10 +84,10 @@ if ($copiesRes) {
     }
 }
 
-// 2. Fetch Books Catalog
+// 3. Fetch Books Catalog with Cover Images and detailed metadata
 $booksRes = mysqli_query($conn, "
     SELECT b.id, b.title, b.author, b.borrow_status, b.is_borrowable, b.non_borrowable_reason, 
-           b.price, b.publication_year, b.publisher, b.position,
+           b.price, b.publication_year, b.publisher, b.position, b.cover_image, b.category_id,
            c.name AS category_name, r.name AS room_name, s.name AS shelf_name
     FROM books b
     LEFT JOIN categories c ON c.id = b.category_id
@@ -89,7 +103,6 @@ if ($booksRes) {
         $bookId = (int)$b['id'];
         $bCopies = $copiesByBook[$bookId] ?? [];
         
-        // Count available copies
         $availCount = 0;
         foreach ($bCopies as $cp) {
             if ($cp['status'] === 'available') {
@@ -98,16 +111,19 @@ if ($booksRes) {
         }
 
         $b['id']               = $bookId;
+        $b['category_id']      = (int)($b['category_id'] ?? 0);
         $b['is_borrowable']    = (int)($b['is_borrowable'] ?? 1);
         $b['available_copies'] = $availCount;
         $b['copies']           = $bCopies;
+        $b['cover_image']      = $b['cover_image'] ?: null;
+        $b['cover_url']        = !empty($b['cover_image']) ? resolve_cover_url($b['cover_image']) : null;
 
         $books[] = $b;
     }
 }
 $data['books'] = $books;
 
-// 3. Role-specific Data Gating
+// 4. Role-specific Data Gating
 if ($role === 'librarian' || $role === 'admin') {
     // Only staff can view member rosters and payment statuses
     $membersRes = mysqli_query($conn, "
@@ -146,8 +162,7 @@ if ($role === 'librarian' || $role === 'admin') {
     }
     $data['active_loans'] = $loans;
 
-} elseif ($role === 'member') {
-    // Members only see their own payment status and active loans
+} elseif ($role === 'member' && $userId > 0) {
     $mRow = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM members WHERE user_id = $userId LIMIT 1"));
     if ($mRow) {
         $memberId = (int)$mRow['id'];

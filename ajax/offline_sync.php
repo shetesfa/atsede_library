@@ -129,6 +129,7 @@ foreach ($data['events'] as $ev) {
         try {
             switch ($opType) {
                 case 'REQUEST':
+                case 'BORROW_REQUEST':
                     // Members can only request for themselves
                     $reqMemberId = (int)($payload['member_id'] ?? 0);
                     $bookId      = (int)($payload['book_id'] ?? 0);

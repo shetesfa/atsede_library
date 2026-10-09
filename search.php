@@ -159,6 +159,7 @@ include __DIR__ . '/includes/header.php';
   <button class="btn btn-navy btn-block mt-2"><i class="bi bi-search"></i> <?= __('search_btn') ?></button>
 </form>
 
+<div id="search-server-container">
 <div class="section-title d-flex justify-content-between align-items-center" style="margin-top:0;">
   <span>ጠቅላላ <?= number_format($totalRecords) ?> ውጤቶች ተገኝተዋል<?= $totalPages > 1 ? " (ገጽ $page ከ $totalPages)" : '' ?></span>
 </div>
@@ -234,5 +235,7 @@ include __DIR__ . '/includes/header.php';
     </div>
   <?php endif; ?>
 <?php endif; ?>
+</div><!-- /#search-server-container -->
+<div id="search-offline-container" style="display:none;"></div>
 
 <?php include __DIR__ . '/includes/footer.php'; ?>
